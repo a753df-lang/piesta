@@ -29,7 +29,7 @@ const SITES = [
   // 공주
   { region: '공주', name: '공주시청', url: 'https://www.gongju.go.kr/kr/', type: '관공서' },
   { region: '공주', name: '공주 공지사항/고시', url: 'https://www.gongju.go.kr/kr/sub05_010101.do', type: '관공서' },
-  { region: '공주', name: '공주문화관광재단', url: 'https://www.gjcf.or.kr/', type: '문화관광' },
+  { region: '공주', name: '공주문화관광재단', url: 'https://www.gongjucf.or.kr/gongjucf/main/view', type: '문화관광' },
 
   // 서천
   { region: '서천', name: '서천군청', url: 'https://www.seocheon.go.kr/kor.do', type: '관공서' },
