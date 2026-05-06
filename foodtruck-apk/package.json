@@ -1,0 +1,42 @@
+{
+  "name": "foodtruck-alarm",
+  "displayName": "푸드트럭 알리미",
+  "version": "1.0.0",
+  "description": "충남/전북 푸드트럭 공고 알림 안드로이드 앱",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "cap:init": "cap init '푸드트럭알리미' 'com.foodtruck.alarm' --web-dir=dist",
+    "cap:add": "cap add android",
+    "cap:sync": "npm run build && cap sync android",
+    "cap:open": "cap open android",
+    "apk:debug": "npm run cap:sync && cd android && ./gradlew assembleDebug",
+    "apk:release": "npm run cap:sync && cd android && ./gradlew assembleRelease",
+    "android": "npm run cap:sync && cap run android"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "lucide-react": "^0.454.0",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/local-notifications": "^6.1.0",
+    "@capacitor/preferences": "^6.0.2",
+    "@capacitor/network": "^6.0.2",
+    "@capacitor/browser": "^6.0.2",
+    "@capacitor/splash-screen": "^6.0.2",
+    "@capacitor/status-bar": "^6.0.1",
+    "@capacitor/push-notifications": "^6.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
+    "@vitejs/plugin-react": "^4.3.2",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "vite": "^5.4.8"
+  }
+}
