@@ -3,7 +3,6 @@
   "displayName": "푸드트럭 알리미",
   "version": "1.0.0",
   "description": "충남/전북 푸드트럭 공고 알림 안드로이드 앱",
-  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
