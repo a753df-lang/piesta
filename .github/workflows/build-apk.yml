@@ -28,6 +28,11 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install ImageMagick (아이콘 변환용)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick librsvg2-bin
+
       - name: Install dependencies
         run: npm install
 
@@ -50,7 +55,6 @@ jobs:
           if ! grep -q "usesCleartextTraffic" "$MANIFEST"; then
             sed -i 's|<application|<application\n        android:usesCleartextTraffic="true"|' "$MANIFEST"
           fi
-          cat "$MANIFEST"
 
       - name: Update app name to Korean
         run: |
@@ -63,6 +67,69 @@ jobs:
               <string name="custom_url_scheme">com.foodtruck.alarm</string>
           </resources>
           EOF
+
+      # ============ 푸드트럭 아이콘 자동 생성 ============
+      - name: Generate app icons from SVG
+        run: |
+          if [ ! -f "foodtruck-icon.svg" ]; then
+            echo "⚠️  foodtruck-icon.svg 없음 - 기본 아이콘 사용"
+            exit 0
+          fi
+
+          echo "🚚 푸드트럭 아이콘 생성 시작..."
+
+          # 안드로이드 아이콘 크기별로 PNG 변환
+          for entry in "mdpi:48" "hdpi:72" "xhdpi:96" "xxhdpi:144" "xxxhdpi:192"; do
+            density="${entry%:*}"
+            size="${entry#*:}"
+            target_dir="android/app/src/main/res/mipmap-${density}"
+            mkdir -p "$target_dir"
+
+            # 일반 아이콘
+            rsvg-convert -w "$size" -h "$size" foodtruck-icon.svg -o "$target_dir/ic_launcher.png"
+            # 둥근 아이콘
+            cp "$target_dir/ic_launcher.png" "$target_dir/ic_launcher_round.png"
+            # 적응형 아이콘 foreground
+            fg_size=$((size * 108 / 48))
+            rsvg-convert -w "$fg_size" -h "$fg_size" foodtruck-icon.svg -o "$target_dir/ic_launcher_foreground.png"
+
+            echo "  ✅ $density (${size}x${size})"
+          done
+
+          # 적응형 아이콘 XML (Android 8.0+)
+          mkdir -p android/app/src/main/res/mipmap-anydpi-v26
+          cat > android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background"/>
+              <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+          </adaptive-icon>
+          EOF
+          cp android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml \
+             android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+
+          # 배경색 정의
+          mkdir -p android/app/src/main/res/values
+          cat > android/app/src/main/res/values/colors.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="colorPrimary">#EF4444</color>
+              <color name="colorPrimaryDark">#DC2626</color>
+              <color name="colorAccent">#F97316</color>
+              <color name="ic_launcher_background">#EF4444</color>
+          </resources>
+          EOF
+
+          # 알림 아이콘
+          for entry in "mdpi:24" "hdpi:36" "xhdpi:48" "xxhdpi:72" "xxxhdpi:96"; do
+            density="${entry%:*}"
+            size="${entry#*:}"
+            target_dir="android/app/src/main/res/drawable-${density}"
+            mkdir -p "$target_dir"
+            rsvg-convert -w "$size" -h "$size" foodtruck-icon.svg -o "$target_dir/ic_stat_notification.png"
+          done
+
+          echo "🎉 모든 아이콘 생성 완료!"
 
       - name: Cache Gradle
         uses: actions/cache@v4
