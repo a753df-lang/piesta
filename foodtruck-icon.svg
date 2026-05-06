@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- 배경: 빨간/주황 그라디언트 (앱 테마와 동일) -->
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F97316"/>
+      <stop offset="50%" stop-color="#EF4444"/>
+      <stop offset="100%" stop-color="#EC4899"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4"/>
+      <feOffset dx="0" dy="4" result="offsetblur"/>
+      <feFlood flood-color="#000000" flood-opacity="0.25"/>
+      <feComposite in2="offsetblur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 둥근 사각형 배경 -->
+  <rect x="0" y="0" width="512" height="512" rx="115" fill="url(#bg)"/>
+
+  <!-- 푸드트럭 아이콘 (흰색) -->
+  <g transform="translate(60, 130)" filter="url(#shadow)">
+    <!-- 트럭 본체 (왼쪽 큰 박스 - 푸드 조리실) -->
+    <rect x="0" y="40" width="240" height="160" rx="14" fill="white"/>
+
+    <!-- 서빙 창문 -->
+    <rect x="20" y="70" width="200" height="80" rx="8" fill="#EF4444" opacity="0.9"/>
+    <rect x="20" y="70" width="200" height="6" fill="#FCD34D"/>
+
+    <!-- 창문 안쪽 음식 장식 (햄버거 이모지 느낌) -->
+    <circle cx="80" cy="115" r="12" fill="#FCD34D"/>
+    <circle cx="120" cy="115" r="12" fill="#FCD34D"/>
+    <circle cx="160" cy="115" r="12" fill="#FCD34D"/>
+
+    <!-- 차양/캐노피 -->
+    <path d="M 5 60 L 235 60 L 220 40 L 20 40 Z" fill="white"/>
+    <rect x="5" y="55" width="230" height="8" fill="#FCD34D"/>
+
+    <!-- 트럭 운전석 (오른쪽) -->
+    <path d="M 240 80 L 320 80 L 360 120 L 360 200 L 240 200 Z" fill="white"/>
+
+    <!-- 운전석 창문 -->
+    <path d="M 252 92 L 312 92 L 340 120 L 340 150 L 252 150 Z" fill="#3B82F6" opacity="0.7"/>
+
+    <!-- 헤드라이트 -->
+    <circle cx="350" cy="170" r="8" fill="#FCD34D"/>
+
+    <!-- 바퀴 (왼쪽) -->
+    <circle cx="60" cy="210" r="28" fill="#1F2937"/>
+    <circle cx="60" cy="210" r="14" fill="white"/>
+    <circle cx="60" cy="210" r="6" fill="#1F2937"/>
+
+    <!-- 바퀴 (오른쪽) -->
+    <circle cx="300" cy="210" r="28" fill="#1F2937"/>
+    <circle cx="300" cy="210" r="14" fill="white"/>
+    <circle cx="300" cy="210" r="6" fill="#1F2937"/>
+
+    <!-- 푸드 깃발 (트럭 위) -->
+    <rect x="115" y="10" width="3" height="35" fill="white"/>
+    <path d="M 118 10 L 155 18 L 118 28 Z" fill="#FCD34D"/>
+  </g>
+
+  <!-- 하단 작은 꾸밈: 김 표현 (스팀) -->
+  <g opacity="0.7">
+    <path d="M 180 105 Q 175 95 180 85 Q 185 75 180 65" stroke="white" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M 220 110 Q 215 100 220 90 Q 225 80 220 70" stroke="white" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M 260 105 Q 255 95 260 85 Q 265 75 260 65" stroke="white" stroke-width="4" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>
