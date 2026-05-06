@@ -14,24 +14,67 @@ import { notifyNewNotices, scheduleDeadlineReminders, listenNotificationClick, e
 
 // 지역별 관공서 / 문화관광 사이트 정보
 const SITES = [
-  { region: '충남', name: '충청남도청 고시공고', url: 'https://www.chungnam.go.kr/cnnet/board.do?mnu_cd=CNNMENU00309', type: '관공서' },
-  { region: '충남', name: '충남문화관광재단', url: 'https://www.cntcf.or.kr/', type: '문화관광' },
-  { region: '충남', name: '충남관광 (도청)', url: 'https://tour.chungnam.go.kr/', type: '문화관광' },
-  { region: '전북', name: '전북특별자치도 고시공고', url: 'https://www.jeonbuk.go.kr/board/list.jeonbuk?boardId=BBS_0000005&menuCd=DOM_000000110002000000', type: '관공서' },
-  { region: '전북', name: '전북문화관광재단', url: 'https://www.jbct.or.kr/', type: '문화관광' },
-  { region: '전북', name: '전북관광 (도청)', url: 'https://tour.jeonbuk.go.kr/', type: '문화관광' },
-  { region: '논산', name: '논산시청 공고/고시', url: 'https://www.nonsan.go.kr/kor/html/sub03/030102.html', type: '관공서' },
-  { region: '논산', name: '논산시청 공지사항', url: 'https://www.nonsan.go.kr/kor/html/sub03/030101.html', type: '관공서' },
+  // ========== 충남권 ==========
+  // 논산
+  { region: '논산', name: '논산시청', url: 'https://www.nonsan.go.kr/', type: '관공서' },
+  { region: '논산', name: '논산 공지사항', url: 'https://www.nonsan.go.kr/kor/html/sub03/030101.html', type: '관공서' },
+  { region: '논산', name: '논산 공고/고시', url: 'https://www.nonsan.go.kr/kor/html/sub03/03010201.html', type: '관공서' },
   { region: '논산', name: '논산문화관광재단', url: 'https://www.nscf.or.kr/', type: '문화관광' },
-  { region: '부여', name: '부여군청 공지사항', url: 'https://www.buyeo.go.kr/html/kr/board/board_03_01.html', type: '관공서' },
+
+  // 부여
+  { region: '부여', name: '부여군청', url: 'https://www.buyeo.go.kr/html/kr/', type: '관공서' },
+  { region: '부여', name: '부여 공지사항', url: 'https://www.buyeo.go.kr/_prog/_board/?code=news_01&site_dvs_cd=kr&menu_dvs_cd=0401', type: '관공서' },
   { region: '부여', name: '부여문화관광재단', url: 'https://www.buyeoctf.or.kr/', type: '문화관광' },
-  { region: '부여', name: '백제향 (부여관광)', url: 'https://www.buyeo.go.kr/html/tour/', type: '문화관광' },
-  { region: '익산', name: '익산시청 고시공고', url: 'https://www.iksan.go.kr/board/list.iksan?boardId=BBS_0000019&menuCd=DOM_000000104004001000', type: '관공서' },
+
+  // 공주
+  { region: '공주', name: '공주시청', url: 'https://www.gongju.go.kr/kr/', type: '관공서' },
+  { region: '공주', name: '공주 공지사항/고시', url: 'https://www.gongju.go.kr/kr/sub05_010101.do', type: '관공서' },
+  { region: '공주', name: '공주문화관광재단', url: 'https://www.gjcf.or.kr/', type: '문화관광' },
+
+  // 서천
+  { region: '서천', name: '서천군청', url: 'https://www.seocheon.go.kr/kor.do', type: '관공서' },
+  { region: '서천', name: '서천 공지/공고', url: 'https://www.seocheon.go.kr/kor/sub01_03_01.do', type: '관공서' },
+  { region: '서천', name: '서천 문화관광', url: 'https://www.seocheon.go.kr/tour.do', type: '문화관광' },
+
+  // 보령
+  { region: '보령', name: '보령시청', url: 'https://www.brcn.go.kr/kor.do', type: '관공서' },
+  { region: '보령', name: '보령 공지사항', url: 'https://www.brcn.go.kr/kor/sub01_03_01.do', type: '관공서' },
+  { region: '보령', name: '보령 문화관광', url: 'https://www.brcn.go.kr/tour/', type: '문화관광' },
+
+  // 청양
+  { region: '청양', name: '청양군청', url: 'https://www.cheongyang.go.kr/kr.do', type: '관공서' },
+  { region: '청양', name: '청양 공지/공고', url: 'https://www.cheongyang.go.kr/kr/sub05_01_01.do', type: '관공서' },
+  { region: '청양', name: '청양 문화관광', url: 'https://www.cheongyang.go.kr/tour/', type: '문화관광' },
+
+  // ========== 전북권 ==========
+  // 익산
+  { region: '익산', name: '익산시청', url: 'https://www.iksan.go.kr/', type: '관공서' },
+  { region: '익산', name: '익산 고시공고', url: 'https://www.iksan.go.kr/index.iksan?menuCd=DOM_000002003009003000', type: '관공서' },
+  { region: '익산', name: '익산 시험·채용', url: 'https://www.iksan.go.kr/index.iksan?menuCd=DOM_000002003009005000', type: '관공서' },
   { region: '익산', name: '익산문화관광재단', url: 'https://www.iksancf.com/', type: '문화관광' },
-  { region: '익산', name: '익산여행', url: 'https://www.iksan.go.kr/tour/', type: '문화관광' },
+
+  // 군산
+  { region: '군산', name: '군산시청', url: 'https://www.gunsan.go.kr/', type: '관공서' },
+  { region: '군산', name: '군산 공지/공고', url: 'https://www.gunsan.go.kr/menu.es?mid=a10301010000', type: '관공서' },
+  { region: '군산', name: '군산 문화관광', url: 'https://www.gunsan.go.kr/tour/', type: '문화관광' },
+
+  // 김제
+  { region: '김제', name: '김제시청', url: 'https://www.gimje.go.kr/', type: '관공서' },
+  { region: '김제', name: '김제 공지사항', url: 'https://www.gimje.go.kr/board/list.gimje?boardId=BBS_0000017&menuCd=DOM_000000104003001000', type: '관공서' },
+  { region: '김제', name: '김제 문화관광', url: 'https://www.gimje.go.kr/tour/', type: '문화관광' },
+
+  // 전주
+  { region: '전주', name: '전주시청', url: 'https://www.jeonju.go.kr/', type: '관공서' },
+  { region: '전주', name: '전주 공지/공고', url: 'https://www.jeonju.go.kr/index.9is?contentUid=9be517c47b6c5a48017b6cee2f3f0042', type: '관공서' },
+  { region: '전주', name: '전주문화재단', url: 'https://www.jjcf.or.kr/', type: '문화관광' },
+
+  // 완주
+  { region: '완주', name: '완주군청', url: 'https://www.wanju.go.kr/', type: '관공서' },
+  { region: '완주', name: '완주 공지/공고', url: 'https://www.wanju.go.kr/index.wanju?menuCd=DOM_000000401001001000', type: '관공서' },
+  { region: '완주', name: '완주 문화관광', url: 'https://www.wanju.go.kr/tour/', type: '문화관광' },
 ];
 
-const REGIONS = ['전체', '충남', '전북', '논산', '부여', '익산'];
+const REGIONS = ['전체', '논산', '부여', '공주', '서천', '보령', '청양', '익산', '군산', '김제', '전주', '완주'];
 
 export default function App() {
   const [tab, setTab] = useState('home');
@@ -871,7 +914,7 @@ function NoticeForm({ initial, onSave, onClose }) {
         <div className="p-5 space-y-4">
           <Field label="지역 *">
             <div className="grid grid-cols-5 gap-1.5">
-              {['충남', '전북', '논산', '부여', '익산'].map(r => (
+              {['논산', '부여', '공주', '서천', '보령', '청양', '익산', '군산', '김제', '전주', '완주'].map(r => (
                 <button
                   key={r}
                   onClick={() => update('region', r)}
