@@ -68,6 +68,17 @@ jobs:
           </resources>
           EOF
 
+      # ============ 디버그: 기존 색상 리소스 확인 ============
+      - name: Debug existing color resources
+        run: |
+          echo "=== 모든 colors.xml / ic_launcher_background 파일 찾기 ==="
+          find android/app/src/main/res -type f \( -name "colors.xml" -o -name "ic_launcher_background*" \) | while read f; do
+            echo ""
+            echo "📄 $f"
+            cat "$f"
+            echo ""
+          done
+
       # ============ 푸드트럭 아이콘 자동 생성 ============
       - name: Generate app icons from SVG
         run: |
@@ -85,18 +96,15 @@ jobs:
             target_dir="android/app/src/main/res/mipmap-${density}"
             mkdir -p "$target_dir"
 
-            # 일반 아이콘
             rsvg-convert -w "$size" -h "$size" foodtruck-icon.svg -o "$target_dir/ic_launcher.png"
-            # 둥근 아이콘
             cp "$target_dir/ic_launcher.png" "$target_dir/ic_launcher_round.png"
-            # 적응형 아이콘 foreground
             fg_size=$((size * 108 / 48))
             rsvg-convert -w "$fg_size" -h "$fg_size" foodtruck-icon.svg -o "$target_dir/ic_launcher_foreground.png"
 
             echo "  ✅ $density (${size}x${size})"
           done
 
-          # 적응형 아이콘 XML (Android 8.0+)
+          # 적응형 아이콘 XML
           mkdir -p android/app/src/main/res/mipmap-anydpi-v26
           cat > android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -108,26 +116,38 @@ jobs:
           cp android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml \
              android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 
-          # ============ 색상 리소스 처리 (중복 방지) ============
-          # 기존 colors.xml 파일들을 모두 찾아서 ic_launcher_background 색상 추가/수정
-          mkdir -p android/app/src/main/res/values
-
-          # 모든 colors.xml 위치 확인
-          echo "📋 기존 colors.xml 파일들:"
-          find android/app/src/main/res -name "colors.xml" -type f
-
-          # 기존 colors.xml에서 ic_launcher_background 줄 제거 (있다면)
-          for colors_file in $(find android/app/src/main/res -name "colors.xml" -type f); do
-            if grep -q "ic_launcher_background" "$colors_file"; then
-              echo "🔧 $colors_file 에서 기존 ic_launcher_background 제거"
-              sed -i '/ic_launcher_background/d' "$colors_file"
+          # ============ 색상 리소스 충돌 완전 해결 ============
+          echo ""
+          echo "🎨 색상 리소스 처리 시작..."
+          
+          # 1단계: 모든 ic_launcher_background 정의를 모든 파일에서 제거
+          echo "  1️⃣  모든 ic_launcher_background 정의 제거 중..."
+          find android/app/src/main/res -type f -name "*.xml" | while read f; do
+            if grep -q "ic_launcher_background" "$f" 2>/dev/null; then
+              if [[ "$f" == *"mipmap-anydpi-v26"* ]]; then
+                # 적응형 아이콘 XML은 참조만 하므로 건드리지 않음
+                continue
+              fi
+              echo "      🗑️  $f 에서 제거"
+              # 한 줄짜리 색상 정의 제거
+              sed -i '/<color name="ic_launcher_background"/d' "$f"
             fi
           done
 
-          # ic_launcher_background 를 메인 colors.xml에만 추가
+          # 2단계: 빈 파일이 된 ic_launcher_background.xml 삭제
+          IC_BG_FILE="android/app/src/main/res/values/ic_launcher_background.xml"
+          if [ -f "$IC_BG_FILE" ]; then
+            # 색상 정의가 없으면 파일 자체를 빈 resources로 만들거나 삭제
+            if ! grep -q "<color" "$IC_BG_FILE"; then
+              echo "      🗑️  빈 $IC_BG_FILE 파일 삭제"
+              rm -f "$IC_BG_FILE"
+            fi
+          fi
+
+          # 3단계: 메인 colors.xml에 ic_launcher_background 한 번만 추가
           MAIN_COLORS="android/app/src/main/res/values/colors.xml"
           if [ ! -f "$MAIN_COLORS" ]; then
-            # 파일 없으면 새로 만들기
+            echo "  2️⃣  colors.xml 새로 생성"
             cat > "$MAIN_COLORS" << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
@@ -138,12 +158,17 @@ jobs:
           </resources>
           EOF
           else
-            # 파일 있으면 ic_launcher_background만 추가
+            echo "  2️⃣  기존 colors.xml에 ic_launcher_background 추가"
             sed -i 's|</resources>|    <color name="ic_launcher_background">#EF4444</color>\n</resources>|' "$MAIN_COLORS"
           fi
 
-          echo "✅ 최종 colors.xml:"
+          # 4단계: 결과 확인
+          echo ""
+          echo "  ✅ 최종 colors.xml:"
           cat "$MAIN_COLORS"
+          echo ""
+          echo "  ✅ ic_launcher_background 검색 결과 (모든 xml):"
+          grep -rn "ic_launcher_background" android/app/src/main/res/ | grep -v "mipmap-anydpi-v26" || echo "    (적응형 아이콘 XML 외에는 없음 = 정상)"
 
           # 알림 아이콘
           for entry in "mdpi:24" "hdpi:36" "xhdpi:48" "xxhdpi:72" "xxxhdpi:96"; do
@@ -154,6 +179,7 @@ jobs:
             rsvg-convert -w "$size" -h "$size" foodtruck-icon.svg -o "$target_dir/ic_stat_notification.png"
           done
 
+          echo ""
           echo "🎉 모든 아이콘 생성 완료!"
 
       - name: Cache Gradle
