@@ -108,9 +108,27 @@ jobs:
           cp android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml \
              android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 
-          # 배경색 정의
+          # ============ 색상 리소스 처리 (중복 방지) ============
+          # 기존 colors.xml 파일들을 모두 찾아서 ic_launcher_background 색상 추가/수정
           mkdir -p android/app/src/main/res/values
-          cat > android/app/src/main/res/values/colors.xml << 'EOF'
+
+          # 모든 colors.xml 위치 확인
+          echo "📋 기존 colors.xml 파일들:"
+          find android/app/src/main/res -name "colors.xml" -type f
+
+          # 기존 colors.xml에서 ic_launcher_background 줄 제거 (있다면)
+          for colors_file in $(find android/app/src/main/res -name "colors.xml" -type f); do
+            if grep -q "ic_launcher_background" "$colors_file"; then
+              echo "🔧 $colors_file 에서 기존 ic_launcher_background 제거"
+              sed -i '/ic_launcher_background/d' "$colors_file"
+            fi
+          done
+
+          # ic_launcher_background 를 메인 colors.xml에만 추가
+          MAIN_COLORS="android/app/src/main/res/values/colors.xml"
+          if [ ! -f "$MAIN_COLORS" ]; then
+            # 파일 없으면 새로 만들기
+            cat > "$MAIN_COLORS" << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <color name="colorPrimary">#EF4444</color>
@@ -119,6 +137,13 @@ jobs:
               <color name="ic_launcher_background">#EF4444</color>
           </resources>
           EOF
+          else
+            # 파일 있으면 ic_launcher_background만 추가
+            sed -i 's|</resources>|    <color name="ic_launcher_background">#EF4444</color>\n</resources>|' "$MAIN_COLORS"
+          fi
+
+          echo "✅ 최종 colors.xml:"
+          cat "$MAIN_COLORS"
 
           # 알림 아이콘
           for entry in "mdpi:24" "hdpi:36" "xhdpi:48" "xxhdpi:72" "xxxhdpi:96"; do
