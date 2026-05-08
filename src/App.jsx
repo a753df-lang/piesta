@@ -6,7 +6,8 @@ import { SplashScreen } from '@capacitor/splash-screen';
 import {
   Bell, MapPin, Calendar, ExternalLink, Star, Search, Plus, X,
   Truck, Megaphone, Trash2, Edit3, Heart, Settings, ChevronRight,
-  Building2, RefreshCw, WifiOff, CheckCircle2, MapPinned,
+  Building2, RefreshCw, WifiOff, CheckCircle2, MapPinned, CalendarCheck,
+  CheckSquare, Square, TrendingUp, Navigation, Map,
 } from 'lucide-react';
 
 import { fetchNotices, isOnline, storage, API_BASE } from './api';
@@ -15,34 +16,74 @@ import { searchRegions, generateSitesFromRegion } from './regionsDB';
 
 const DEFAULT_SITES = [
   { region: '논산', name: '논산시청', url: 'https://www.nonsan.go.kr/', type: '관공서' },
-  { region: '논산', name: '논산 공지사항', url: 'https://www.nonsan.go.kr/kor/html/sub03/030101.html', type: '관공서' },
-  { region: '논산', name: '논산 공고/고시', url: 'https://www.nonsan.go.kr/kor/html/sub03/03010201.html', type: '관공서' },
   { region: '논산', name: '논산문화관광재단', url: 'https://www.nscf.or.kr/', type: '문화관광' },
   { region: '부여', name: '부여군청', url: 'https://www.buyeo.go.kr/html/kr/', type: '관공서' },
-  { region: '부여', name: '부여 공지사항', url: 'https://www.buyeo.go.kr/_prog/_board/?code=news_01&site_dvs_cd=kr&menu_dvs_cd=0401', type: '관공서' },
   { region: '부여', name: '부여문화관광재단', url: 'https://www.buyeoctf.or.kr/', type: '문화관광' },
   { region: '공주', name: '공주시청', url: 'https://www.gongju.go.kr/kr/', type: '관공서' },
   { region: '공주', name: '공주문화관광재단', url: 'https://www.gjcf.or.kr/', type: '문화관광' },
   { region: '서천', name: '서천군청', url: 'https://www.seocheon.go.kr/kor.do', type: '관공서' },
-  { region: '서천', name: '서천 문화관광', url: 'https://www.seocheon.go.kr/tour.do', type: '문화관광' },
   { region: '보령', name: '보령시청', url: 'https://www.brcn.go.kr/kor.do', type: '관공서' },
-  { region: '보령', name: '보령 문화관광', url: 'https://www.brcn.go.kr/tour/', type: '문화관광' },
   { region: '청양', name: '청양군청', url: 'https://www.cheongyang.go.kr/kr.do', type: '관공서' },
-  { region: '청양', name: '청양 문화관광', url: 'https://www.cheongyang.go.kr/tour/', type: '문화관광' },
   { region: '익산', name: '익산시청', url: 'https://www.iksan.go.kr/', type: '관공서' },
-  { region: '익산', name: '익산 고시공고', url: 'https://www.iksan.go.kr/index.iksan?menuCd=DOM_000002003009003000', type: '관공서' },
   { region: '익산', name: '익산문화관광재단', url: 'https://www.iksancf.com/', type: '문화관광' },
   { region: '군산', name: '군산시청', url: 'https://www.gunsan.go.kr/', type: '관공서' },
-  { region: '군산', name: '군산 문화관광', url: 'https://www.gunsan.go.kr/tour/', type: '문화관광' },
   { region: '김제', name: '김제시청', url: 'https://www.gimje.go.kr/', type: '관공서' },
-  { region: '김제', name: '김제 문화관광', url: 'https://www.gimje.go.kr/tour/', type: '문화관광' },
   { region: '전주', name: '전주시청', url: 'https://www.jeonju.go.kr/', type: '관공서' },
   { region: '전주', name: '전주문화재단', url: 'https://www.jjcf.or.kr/', type: '문화관광' },
   { region: '완주', name: '완주군청', url: 'https://www.wanju.go.kr/', type: '관공서' },
-  { region: '완주', name: '완주 문화관광', url: 'https://www.wanju.go.kr/tour/', type: '문화관광' },
 ];
 
 const DEFAULT_REGIONS = ['논산', '부여', '공주', '서천', '보령', '청양', '익산', '군산', '김제', '전주', '완주'];
+
+const DEFAULT_CHECKLIST = [
+  { id: 'c1', text: '식자재 구입', done: false },
+  { id: 'c2', text: '가스/전기 점검', done: false },
+  { id: 'c3', text: '거스름돈 준비', done: false },
+  { id: 'c4', text: '결제 단말기 충전', done: false },
+  { id: 'c5', text: '메뉴판 준비', done: false },
+];
+
+// ============ 네이버 지도 헬퍼 ============
+async function openNaverMap(location, mode = 'search') {
+  if (!location || !location.trim()) {
+    alert('장소가 입력되지 않았어요');
+    return;
+  }
+  const encoded = encodeURIComponent(location.trim());
+  let appUrl, webUrl;
+
+  if (mode === 'search') {
+    // 네이버 지도 앱으로 장소 검색
+    appUrl = `nmap://search?query=${encoded}&appname=com.foodtruck.alarm`;
+    webUrl = `https://map.naver.com/v5/search/${encoded}`;
+  } else if (mode === 'route') {
+    // 네이버 지도 앱으로 길찾기 (현재 위치 → 장소)
+    appUrl = `nmap://route/car?dlat=&dlng=&dname=${encoded}&appname=com.foodtruck.alarm`;
+    webUrl = `https://map.naver.com/v5/directions/-/-/${encoded}`;
+  }
+
+  // 모바일에서 앱 우선 시도, 실패 시 웹으로
+  try {
+    // Capacitor Browser는 nmap:// 같은 커스텀 스킴 처리 안 됨
+    // window.location.href 로 직접 시도
+    const start = Date.now();
+    window.location.href = appUrl;
+
+    // 1.5초 후 앱이 안 열렸으면 웹으로 fallback
+    setTimeout(() => {
+      if (Date.now() - start < 2000 && !document.hidden) {
+        try {
+          Browser.open({ url: webUrl });
+        } catch {
+          window.open(webUrl, '_blank');
+        }
+      }
+    }, 1500);
+  } catch {
+    try { await Browser.open({ url: webUrl }); }
+    catch { window.open(webUrl, '_blank'); }
+  }
+}
 
 export default function App() {
   const [tab, setTab] = useState('home');
@@ -63,6 +104,11 @@ export default function App() {
   const [showRegionManager, setShowRegionManager] = useState(false);
   const [showSiteManager, setShowSiteManager] = useState(false);
 
+  const [events, setEvents] = useState([]);
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [editingEvent, setEditingEvent] = useState(null);
+  const [eventTabFilter, setEventTabFilter] = useState('upcoming');
+
   const allNotices = useMemo(() => [...serverNotices, ...manualNotices], [serverNotices, manualNotices]);
   const allRegions = useMemo(() => ['전체', ...DEFAULT_REGIONS, ...customRegions], [customRegions]);
   const formRegions = useMemo(() => [...DEFAULT_REGIONS, ...customRegions], [customRegions]);
@@ -80,12 +126,14 @@ export default function App() {
       const s = await storage.getSettings();
       const cr = await storage.getCustomRegions();
       const cs = await storage.getCustomSites();
+      const ev = await storage.getEvents();
       setServerNotices(cached);
       setManualNotices(manual);
       setFavorites(favs);
       setSettings(s);
       setCustomRegions(cr);
       setCustomSites(cs);
+      setEvents(ev);
       const net = await isOnline();
       setOnline(net);
       if (s.notifyEnabled) await ensurePermission();
@@ -93,9 +141,10 @@ export default function App() {
         if (url) await Browser.open({ url });
       });
       CapApp.addListener('backButton', () => {
-        if (showAdd || showRegionManager || showSiteManager) {
+        if (showAdd || showRegionManager || showSiteManager || showEventForm) {
           setShowAdd(false); setEditingNotice(null);
           setShowRegionManager(false); setShowSiteManager(false);
+          setShowEventForm(false); setEditingEvent(null);
         } else if (tab !== 'home') setTab('home');
         else CapApp.exitApp();
       });
@@ -179,43 +228,166 @@ export default function App() {
     catch { window.open(url, '_blank'); }
   };
 
-  const addToCalendar = async (notice) => {
-    if (!notice.deadline && !notice.eventDate) {
-      alert('마감일이나 행사일이 없어 일정을 만들 수 없어요');
+  // ========== 일정 관리 ==========
+  const saveEvent = async (event) => {
+    const isEdit = !!event.id && events.some(e => e.id === event.id);
+    let next;
+    if (isEdit) {
+      next = events.map(e => e.id === event.id ? event : e);
+    } else {
+      next = [...events, {
+        ...event,
+        id: 'ev_' + Date.now(),
+        checklist: event.checklist || DEFAULT_CHECKLIST.map(c => ({ ...c })),
+        createdAt: Date.now(),
+      }];
+    }
+    setEvents(next);
+    await storage.setEvents(next);
+    setShowEventForm(false);
+    setEditingEvent(null);
+  };
+
+  const deleteEvent = async (id) => {
+    if (!confirm('이 일정을 삭제할까요?')) return;
+    const next = events.filter(e => e.id !== id);
+    setEvents(next);
+    await storage.setEvents(next);
+  };
+
+  const toggleChecklistItem = async (eventId, itemId) => {
+    const next = events.map(e => {
+      if (e.id !== eventId) return e;
+      return {
+        ...e,
+        checklist: (e.checklist || []).map(c =>
+          c.id === itemId ? { ...c, done: !c.done } : c
+        ),
+      };
+    });
+    setEvents(next);
+    await storage.setEvents(next);
+  };
+
+  const addChecklistItem = async (eventId, text) => {
+    if (!text.trim()) return;
+    const next = events.map(e => {
+      if (e.id !== eventId) return e;
+      return {
+        ...e,
+        checklist: [...(e.checklist || []), { id: 'c_' + Date.now(), text: text.trim(), done: false }],
+      };
+    });
+    setEvents(next);
+    await storage.setEvents(next);
+  };
+
+  const removeChecklistItem = async (eventId, itemId) => {
+    const next = events.map(e => {
+      if (e.id !== eventId) return e;
+      return { ...e, checklist: (e.checklist || []).filter(c => c.id !== itemId) };
+    });
+    setEvents(next);
+    await storage.setEvents(next);
+  };
+
+  const updateEventRevenue = async (eventId, actualRevenue) => {
+    const next = events.map(e =>
+      e.id === eventId ? { ...e, actualRevenue: actualRevenue, completed: true } : e
+    );
+    setEvents(next);
+    await storage.setEvents(next);
+  };
+
+  const confirmAttendance = async (notice) => {
+    const exists = events.some(e => e.fromNoticeId === notice.id);
+    if (exists) {
+      alert('이미 일정에 추가된 공고입니다');
       return;
     }
-    const events = [];
-    if (notice.deadline) {
-      const dl = new Date(notice.deadline);
-      dl.setHours(9, 0, 0, 0);
-      const dlEnd = new Date(dl);
-      dlEnd.setHours(10, 0, 0, 0);
-      events.push({
-        title: '[마감] ' + notice.title,
-        start: dl, end: dlEnd,
-        details: '푸드트럭 공고 마감일\n주관: ' + (notice.org || '-') + '\n지역: ' + notice.region + (notice.summary ? '\n\n' + notice.summary : '') + '\n\n공고: ' + (notice.url || '-'),
-        location: notice.location || '',
-      });
+    const newEvent = {
+      id: 'ev_' + Date.now(),
+      title: notice.title,
+      region: notice.region,
+      org: notice.org || '',
+      eventDate: notice.eventDate || notice.deadline || '',
+      location: notice.location || '',
+      fee: notice.fee || '',
+      expectedRevenue: '',
+      actualRevenue: '',
+      memo: notice.summary || '',
+      checklist: DEFAULT_CHECKLIST.map(c => ({ ...c })),
+      url: notice.url || '',
+      fromNoticeId: notice.id,
+      completed: false,
+      createdAt: Date.now(),
+    };
+    const next = [...events, newEvent];
+    setEvents(next);
+    await storage.setEvents(next);
+    alert('✅ 일정에 추가되었어요!\n[내일정] 탭에서 확인할 수 있어요');
+  };
+
+  const addToCalendar = async (item, isEvent = false) => {
+    const dateStr = isEvent ? item.eventDate : (item.deadline || item.eventDate);
+    if (!dateStr && !item.eventDate) {
+      alert('날짜가 없어 캘린더에 추가할 수 없어요');
+      return;
     }
-    if (notice.eventDate) {
-      const m = notice.eventDate.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+    const evList = [];
+    if (isEvent) {
+      const m = dateStr.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
       if (m) {
         const evStart = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]), 9, 0, 0);
         const evEnd = new Date(evStart);
         evEnd.setHours(18, 0, 0, 0);
-        events.push({
-          title: '[행사] ' + notice.title,
+        const checklistText = (item.checklist || []).map(c => '☐ ' + c.text).join('\n');
+        evList.push({
+          title: '🚚 ' + item.title,
           start: evStart, end: evEnd,
-          details: '푸드트럭 행사일\n주관: ' + (notice.org || '-') + '\n지역: ' + notice.region + '\n기간: ' + notice.eventDate + (notice.summary ? '\n\n' + notice.summary : '') + '\n\n공고: ' + (notice.url || '-'),
-          location: notice.location || '',
+          details: '푸드트럭 행사\n주관: ' + (item.org || '-') + '\n지역: ' + item.region +
+            (item.fee ? '\n참가비: ' + item.fee : '') +
+            (item.expectedRevenue ? '\n예상수익: ' + item.expectedRevenue : '') +
+            (item.memo ? '\n\n' + item.memo : '') +
+            (checklistText ? '\n\n[준비물]\n' + checklistText : '') +
+            (item.url ? '\n\n공고: ' + item.url : ''),
+          location: item.location || '',
         });
       }
+    } else {
+      if (item.deadline) {
+        const dl = new Date(item.deadline);
+        dl.setHours(9, 0, 0, 0);
+        const dlEnd = new Date(dl);
+        dlEnd.setHours(10, 0, 0, 0);
+        evList.push({
+          title: '[마감] ' + item.title,
+          start: dl, end: dlEnd,
+          details: '푸드트럭 공고 마감일\n주관: ' + (item.org || '-') + '\n지역: ' + item.region +
+            (item.summary ? '\n\n' + item.summary : '') + '\n\n공고: ' + (item.url || '-'),
+          location: item.location || '',
+        });
+      }
+      if (item.eventDate) {
+        const m = item.eventDate.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+        if (m) {
+          const evStart = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]), 9, 0, 0);
+          const evEnd = new Date(evStart);
+          evEnd.setHours(18, 0, 0, 0);
+          evList.push({
+            title: '[행사] ' + item.title,
+            start: evStart, end: evEnd,
+            details: '푸드트럭 행사일\n주관: ' + (item.org || '-') + '\n지역: ' + item.region,
+            location: item.location || '',
+          });
+        }
+      }
     }
-    if (events.length === 0) { alert('일정 날짜를 인식할 수 없어요'); return; }
-    let chosen = events;
-    if (events.length === 2) {
+    if (evList.length === 0) { alert('일정 날짜를 인식할 수 없어요'); return; }
+    let chosen = evList;
+    if (evList.length === 2) {
       const choice = confirm('어떤 일정을 캘린더에 추가할까요?\n[확인] 마감일 + 행사일 모두\n[취소] 마감일만 추가');
-      chosen = choice ? events : [events[0]];
+      chosen = choice ? evList : [evList[0]];
     }
     for (const ev of chosen) {
       const fmt = (d) => {
@@ -234,18 +406,29 @@ export default function App() {
     }
   };
 
+  const addAllEventsToCalendar = async () => {
+    const pendingEvents = events.filter(e => !e.completed && e.eventDate);
+    if (pendingEvents.length === 0) {
+      alert('캘린더에 추가할 일정이 없어요');
+      return;
+    }
+    if (!confirm(pendingEvents.length + '개 일정을 모두 캘린더에 추가할까요?')) return;
+    for (const ev of pendingEvents) {
+      await addToCalendar(ev, true);
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  };
+
   const addRegionFromDB = async (regionData) => {
     const regionName = regionData.name;
     if (DEFAULT_REGIONS.includes(regionName) || customRegions.includes(regionName)) {
-      alert('이미 추가된 지역입니다');
-      return;
+      alert('이미 추가된 지역입니다'); return;
     }
     const nextRegions = [...customRegions, regionName];
     setCustomRegions(nextRegions);
     await storage.setCustomRegions(nextRegions);
     const generatedSites = generateSitesFromRegion(regionData).map(s => ({
-      ...s,
-      id: 'cs_' + Date.now() + Math.random().toString(36).slice(2, 6),
+      ...s, id: 'cs_' + Date.now() + Math.random().toString(36).slice(2, 6),
     }));
     const nextSites = [...customSites, ...generatedSites];
     setCustomSites(nextSites);
@@ -257,8 +440,7 @@ export default function App() {
     const trimmed = name.trim();
     if (!trimmed) return;
     if (DEFAULT_REGIONS.includes(trimmed) || customRegions.includes(trimmed)) {
-      alert('이미 존재하는 지역입니다');
-      return;
+      alert('이미 존재하는 지역입니다'); return;
     }
     const next = [...customRegions, trimmed];
     setCustomRegions(next);
@@ -277,8 +459,7 @@ export default function App() {
 
   const addCustomSite = async (site) => {
     if (!site.region || !site.name || !site.url) {
-      alert('지역, 사이트명, URL을 모두 입력해주세요');
-      return;
+      alert('지역, 사이트명, URL을 모두 입력해주세요'); return;
     }
     let url = site.url.trim();
     if (!/^https?:\/\//.test(url)) url = 'https://' + url;
@@ -298,8 +479,12 @@ export default function App() {
     if (!dateStr) return null;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const dl = new Date(dateStr);
-    return Math.ceil((dl - today) / (1000 * 60 * 60 * 24));
+    const m = String(dateStr).match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+    if (m) {
+      const dl = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+      return Math.ceil((dl - today) / (1000 * 60 * 60 * 24));
+    }
+    return null;
   };
 
   const urgentNotices = useMemo(() => {
@@ -324,6 +509,64 @@ export default function App() {
   const filteredSites = useMemo(() => allSites.filter(s => region === '전체' || s.region === region), [allSites, region]);
   const favoriteNotices = useMemo(() => allNotices.filter(n => favorites.has(n.id)), [allNotices, favorites]);
 
+  const sortedEvents = useMemo(() => {
+    return [...events].sort((a, b) => {
+      const ma = (a.eventDate || '').match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+      const mb = (b.eventDate || '').match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+      const da = ma ? new Date(parseInt(ma[1]), parseInt(ma[2]) - 1, parseInt(ma[3])) : new Date(0);
+      const db = mb ? new Date(parseInt(mb[1]), parseInt(mb[2]) - 1, parseInt(mb[3])) : new Date(0);
+      return da - db;
+    });
+  }, [events]);
+
+  const upcomingEvents = useMemo(() => {
+    return sortedEvents.filter(e => {
+      if (e.completed) return false;
+      const d = daysUntil(e.eventDate);
+      return d === null || d >= 0;
+    });
+  }, [sortedEvents]);
+
+  const pastEvents = useMemo(() => {
+    return sortedEvents.filter(e => {
+      if (e.completed) return true;
+      const d = daysUntil(e.eventDate);
+      return d !== null && d < 0;
+    }).reverse();
+  }, [sortedEvents]);
+
+  const nextEvent = upcomingEvents[0];
+  const nextEventDays = nextEvent ? daysUntil(nextEvent.eventDate) : null;
+
+  const stats = useMemo(() => {
+    const now = new Date();
+    const thisMonth = now.getMonth();
+    const thisYear = now.getFullYear();
+    let thisMonthCount = 0;
+    let thisMonthRevenue = 0;
+    let totalRevenue = 0;
+    const byRegion = {};
+    for (const e of events) {
+      const m = (e.eventDate || '').match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+      if (m) {
+        const y = parseInt(m[1]), mo = parseInt(m[2]) - 1;
+        if (y === thisYear && mo === thisMonth) {
+          thisMonthCount++;
+          if (e.actualRevenue) {
+            const rev = parseInt(String(e.actualRevenue).replace(/[^\d]/g, '')) || 0;
+            thisMonthRevenue += rev;
+          }
+        }
+      }
+      if (e.actualRevenue) {
+        const rev = parseInt(String(e.actualRevenue).replace(/[^\d]/g, '')) || 0;
+        totalRevenue += rev;
+      }
+      if (e.region) byRegion[e.region] = (byRegion[e.region] || 0) + 1;
+    }
+    return { thisMonthCount, thisMonthRevenue, totalRevenue, byRegion };
+  }, [events]);
+
   return (
     <div className="min-h-screen bg-stone-50 font-sans">
       <div className="max-w-md mx-auto bg-white min-h-screen relative pb-20 shadow-2xl">
@@ -336,7 +579,7 @@ export default function App() {
               <div>
                 <h1 className="text-xl font-black tracking-tight">푸드트럭 알리미</h1>
                 <p className="text-[11px] text-white/80 font-medium flex items-center gap-1">
-                  전국 푸드트럭 공고
+                  공고 + 일정 + 비즈니스
                   {!online && <WifiOff className="w-3 h-3 ml-1" />}
                 </p>
               </div>
@@ -345,23 +588,27 @@ export default function App() {
               <button onClick={refresh} disabled={refreshing} className="p-2 rounded-full bg-white/20 active:bg-white/30">
                 <RefreshCw className={'w-5 h-5 ' + (refreshing ? 'animate-spin' : '')} strokeWidth={2.5} />
               </button>
-              {urgentNotices.length > 0 && settings.notifyEnabled && (
+              {(urgentNotices.length > 0 || (nextEvent && nextEventDays !== null && nextEventDays <= 3)) && settings.notifyEnabled && (
                 <div className="relative p-2">
                   <Bell className="w-6 h-6" />
-                  <span className="absolute top-0 right-0 bg-yellow-300 text-red-700 text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">{urgentNotices.length}</span>
+                  <span className="absolute top-0 right-0 bg-yellow-300 text-red-700 text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">
+                    {urgentNotices.length + (nextEvent && nextEventDays !== null && nextEventDays <= 3 ? 1 : 0)}
+                  </span>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-5 px-5 mt-4">
-            {allRegions.map(r => (
-              <button key={r} onClick={() => setRegion(r)}
-                className={'shrink-0 px-4 py-1.5 rounded-full text-sm font-bold ' + (region === r ? 'bg-white text-red-600 shadow-md scale-105' : 'bg-white/20 text-white active:bg-white/30')}>
-                {r}
-              </button>
-            ))}
-          </div>
+          {(tab === 'home' || tab === 'notices' || tab === 'sites') && (
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-5 px-5 mt-4">
+              {allRegions.map(r => (
+                <button key={r} onClick={() => setRegion(r)}
+                  className={'shrink-0 px-4 py-1.5 rounded-full text-sm font-bold ' + (region === r ? 'bg-white text-red-600 shadow-md scale-105' : 'bg-white/20 text-white active:bg-white/30')}>
+                  {r}
+                </button>
+              ))}
+            </div>
+          )}
 
           {error && (
             <div className="mt-3 bg-red-700/30 border border-white/30 rounded-lg px-3 py-1.5 text-[11px] font-medium">
@@ -374,37 +621,54 @@ export default function App() {
           {tab === 'home' && (
             <HomeView
               urgentNotices={urgentNotices}
-              recentNotices={filteredNotices.slice(0, 4)}
-              sites={filteredSites}
+              recentNotices={filteredNotices.slice(0, 3)}
+              nextEvent={nextEvent}
+              nextEventDays={nextEventDays}
+              upcomingCount={upcomingEvents.length}
+              stats={stats}
               notifyEnabled={settings.notifyEnabled}
               daysUntil={daysUntil}
-              favorites={favorites}
-              onToggleFavorite={toggleFavorite}
               onTabChange={setTab}
               onOpenUrl={openUrl}
-              onAddToCalendar={addToCalendar}
-              lastSync={lastSync}
-              totalCount={allNotices.length}
-              serverCount={serverNotices.length}
+              onOpenMap={openNaverMap}
             />
           )}
           {tab === 'notices' && (
             <NoticesView notices={filteredNotices} search={search} setSearch={setSearch}
               favorites={favorites} onToggleFavorite={toggleFavorite} daysUntil={daysUntil}
               onEdit={(n) => { setEditingNotice(n); setShowAdd(true); }}
-              onDelete={deleteManualNotice} onOpenUrl={openUrl} onAddToCalendar={addToCalendar} />
+              onDelete={deleteManualNotice} onOpenUrl={openUrl}
+              onAddToCalendar={(n) => addToCalendar(n, false)}
+              onConfirmAttendance={confirmAttendance}
+              events={events} />
+          )}
+          {tab === 'events' && (
+            <EventsView
+              upcomingEvents={upcomingEvents}
+              pastEvents={pastEvents}
+              filter={eventTabFilter}
+              setFilter={setEventTabFilter}
+              daysUntil={daysUntil}
+              onEdit={(e) => { setEditingEvent(e); setShowEventForm(true); }}
+              onDelete={deleteEvent}
+              onToggleChecklist={toggleChecklistItem}
+              onAddChecklistItem={addChecklistItem}
+              onRemoveChecklistItem={removeChecklistItem}
+              onUpdateRevenue={updateEventRevenue}
+              onAddToCalendar={(e) => addToCalendar(e, true)}
+              onAddAllToCalendar={addAllEventsToCalendar}
+              onOpenUrl={openUrl}
+              onOpenMap={openNaverMap}
+            />
           )}
           {tab === 'sites' && (
             <SitesView sites={filteredSites} onOpenUrl={openUrl} onRemoveSite={removeCustomSite}
               onOpenSiteManager={() => setShowSiteManager(true)} />
           )}
-          {tab === 'favorites' && (
-            <FavoritesView notices={favoriteNotices} onToggleFavorite={toggleFavorite}
-              daysUntil={daysUntil} onOpenUrl={openUrl} onAddToCalendar={addToCalendar} />
-          )}
           {tab === 'settings' && (
             <SettingsView settings={settings} onChange={updateSettings}
               noticeCount={allNotices.length} favoriteCount={favorites.size}
+              eventCount={events.length} stats={stats}
               customRegions={customRegions} customSites={customSites}
               lastSync={lastSync} onRefresh={refresh} refreshing={refreshing}
               onOpenRegionManager={() => setShowRegionManager(true)}
@@ -417,8 +681,8 @@ export default function App() {
             {[
               { id: 'home', icon: Megaphone, label: '홈' },
               { id: 'notices', icon: Calendar, label: '공고' },
+              { id: 'events', icon: CalendarCheck, label: '내일정' },
               { id: 'sites', icon: Building2, label: '사이트' },
-              { id: 'favorites', icon: Heart, label: '즐겨찾기' },
               { id: 'settings', icon: Settings, label: '설정' },
             ].map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
@@ -437,7 +701,13 @@ export default function App() {
             <Plus className="w-7 h-7" strokeWidth={2.5} />
           </button>
         )}
-
+        {tab === 'events' && (
+          <button onClick={() => { setEditingEvent(null); setShowEventForm(true); }}
+            className="fixed bottom-24 right-5 w-14 h-14 bg-gradient-to-br from-green-500 to-teal-500 text-white rounded-full shadow-xl flex items-center justify-center active:scale-95 z-20"
+            style={{ left: 'calc(50% + 80px)' }}>
+            <Plus className="w-7 h-7" strokeWidth={2.5} />
+          </button>
+        )}
         {tab === 'sites' && (
           <button onClick={() => setShowSiteManager(true)}
             className="fixed bottom-24 right-5 w-14 h-14 bg-gradient-to-br from-blue-500 to-indigo-500 text-white rounded-full shadow-xl flex items-center justify-center active:scale-95 z-20"
@@ -447,6 +717,7 @@ export default function App() {
         )}
 
         {showAdd && <NoticeForm initial={editingNotice} onSave={saveManualNotice} onClose={() => { setShowAdd(false); setEditingNotice(null); }} regions={formRegions} />}
+        {showEventForm && <EventForm initial={editingEvent} onSave={saveEvent} onClose={() => { setShowEventForm(false); setEditingEvent(null); }} regions={formRegions} onOpenMap={openNaverMap} />}
         {showRegionManager && <RegionManager customRegions={customRegions} defaultRegions={DEFAULT_REGIONS} onAddFromDB={addRegionFromDB} onAddManual={addCustomRegionManual} onRemove={removeCustomRegion} onClose={() => setShowRegionManager(false)} />}
         {showSiteManager && <SiteManager customSites={customSites} regions={formRegions} onAdd={addCustomSite} onRemove={removeCustomSite} onClose={() => setShowSiteManager(false)} />}
       </div>
@@ -454,9 +725,52 @@ export default function App() {
   );
 }
 
-function HomeView({ urgentNotices, recentNotices, sites, notifyEnabled, daysUntil, favorites, onToggleFavorite, onTabChange, onOpenUrl, onAddToCalendar, lastSync, totalCount, serverCount }) {
+// ============ 홈 ============
+function HomeView({ urgentNotices, recentNotices, nextEvent, nextEventDays, upcomingCount, stats, notifyEnabled, daysUntil, onTabChange, onOpenUrl, onOpenMap }) {
   return (
     <div className="space-y-6">
+      {nextEvent && (
+        <section>
+          <h2 className="text-base font-black text-stone-900 mb-3 flex items-center gap-2">
+            <span className="text-lg">🚚</span> 다음 행사
+          </h2>
+          <div className="bg-gradient-to-br from-green-500 to-teal-600 text-white rounded-2xl p-4 shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold bg-white/20 px-2 py-0.5 rounded-full">{nextEvent.region}</span>
+              {nextEventDays !== null && (
+                <span className="text-2xl font-black">
+                  {nextEventDays === 0 ? 'TODAY!' : 'D-' + nextEventDays}
+                </span>
+              )}
+            </div>
+            <h3 className="text-base font-black leading-tight line-clamp-2 mb-2">{nextEvent.title}</h3>
+            <div className="flex items-center gap-3 text-[11px] text-white/90 mb-3">
+              <div className="flex items-center gap-1">
+                <Calendar className="w-3 h-3" />{nextEvent.eventDate || '날짜 미정'}
+              </div>
+              {nextEvent.location && (
+                <div className="flex items-center gap-1 truncate">
+                  <MapPin className="w-3 h-3" />{nextEvent.location}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2">
+              {nextEvent.location && (
+                <button onClick={(e) => { e.stopPropagation(); onOpenMap(nextEvent.location, 'route'); }}
+                  className="flex-1 bg-white/20 active:bg-white/30 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-1.5">
+                  <Navigation className="w-3.5 h-3.5" />
+                  길찾기
+                </button>
+              )}
+              <button onClick={() => onTabChange('events')}
+                className="flex-1 bg-white text-green-600 text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-1">
+                자세히 <ChevronRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
       {urgentNotices.length > 0 && notifyEnabled && (
         <section>
           <div className="flex items-center justify-between mb-3">
@@ -470,17 +784,13 @@ function HomeView({ urgentNotices, recentNotices, sites, notifyEnabled, daysUnti
           </div>
         </section>
       )}
+
       <section className="grid grid-cols-3 gap-2">
-        <StatCard label="자동수집" value={serverCount} icon="🤖" />
-        <StatCard label="전체공고" value={totalCount} icon="📋" />
-        <StatCard label="즐겨찾기" value={favorites.size} icon="⭐" />
+        <StatCard label="이번달 행사" value={stats.thisMonthCount} icon="📅" />
+        <StatCard label="누적 행사" value={upcomingCount + (stats.thisMonthCount || 0)} icon="🚚" />
+        <StatCard label="이번달 수익" value={stats.thisMonthRevenue > 0 ? Math.round(stats.thisMonthRevenue / 10000) + '만' : '0'} icon="💰" />
       </section>
-      {lastSync && (
-        <div className="flex items-center justify-center gap-1.5 text-[11px] text-stone-500 font-medium">
-          <CheckCircle2 className="w-3 h-3 text-green-500" />
-          마지막 동기화: {lastSync.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
-        </div>
-      )}
+
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-black text-stone-900">최근 공고</h2>
@@ -493,22 +803,21 @@ function HomeView({ urgentNotices, recentNotices, sites, notifyEnabled, daysUnti
             <EmptyState message="등록된 공고가 없습니다" sub="새로고침하거나 + 버튼으로 직접 등록할 수 있어요" />
           ) : (
             recentNotices.map(n => (
-              <NoticeCard key={n.id} notice={n} isFavorite={favorites.has(n.id)}
-                onToggleFavorite={() => onToggleFavorite(n.id)}
-                daysLeft={daysUntil(n.deadline)} onOpenUrl={onOpenUrl} onAddToCalendar={onAddToCalendar} />
+              <button key={n.id} onClick={() => onOpenUrl(n.url)}
+                className="w-full text-left bg-white border-2 border-stone-200 rounded-2xl p-3.5 active:scale-[0.98]">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-black text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">{n.region}</span>
+                  <span className="text-[10px] text-stone-500 font-medium truncate">{n.org}</span>
+                </div>
+                <h3 className="text-sm font-bold text-stone-900 leading-snug line-clamp-2">{n.title}</h3>
+                {n.deadline && (
+                  <div className="flex items-center gap-1 mt-2 text-[11px] text-stone-600">
+                    <Calendar className="w-3 h-3" />~{n.deadline}
+                  </div>
+                )}
+              </button>
             ))
           )}
-        </div>
-      </section>
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-black text-stone-900">관공서 바로가기</h2>
-          <button onClick={() => onTabChange('sites')} className="text-xs font-bold text-red-600 flex items-center gap-0.5">
-            전체보기 <ChevronRight className="w-3 h-3" />
-          </button>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {sites.slice(0, 4).map((s, i) => <SiteChip key={i} site={s} onOpenUrl={onOpenUrl} />)}
         </div>
       </section>
     </div>
@@ -544,7 +853,8 @@ function StatCard({ label, value, icon }) {
   );
 }
 
-function NoticesView({ notices, search, setSearch, favorites, onToggleFavorite, daysUntil, onEdit, onDelete, onOpenUrl, onAddToCalendar }) {
+// ============ 공고 ============
+function NoticesView({ notices, search, setSearch, favorites, onToggleFavorite, daysUntil, onEdit, onDelete, onOpenUrl, onAddToCalendar, onConfirmAttendance, events }) {
   return (
     <div className="space-y-4">
       <div className="relative">
@@ -558,22 +868,27 @@ function NoticesView({ notices, search, setSearch, favorites, onToggleFavorite, 
         {notices.length === 0 ? (
           <EmptyState message="등록된 공고가 없습니다" sub="당겨서 새로고침하거나 + 버튼으로 직접 등록" />
         ) : (
-          notices.map(n => (
-            <NoticeCard key={n.id} notice={n}
-              isFavorite={favorites.has(n.id)}
-              onToggleFavorite={() => onToggleFavorite(n.id)}
-              daysLeft={daysUntil(n.deadline)}
-              onEdit={n.id && n.id.startsWith('m_') ? () => onEdit(n) : null}
-              onDelete={n.id && n.id.startsWith('m_') ? () => onDelete(n.id) : null}
-              onOpenUrl={onOpenUrl} onAddToCalendar={onAddToCalendar} expandable />
-          ))
+          notices.map(n => {
+            const isInEvents = events.some(e => e.fromNoticeId === n.id);
+            return (
+              <NoticeCard key={n.id} notice={n}
+                isFavorite={favorites.has(n.id)}
+                isInEvents={isInEvents}
+                onToggleFavorite={() => onToggleFavorite(n.id)}
+                daysLeft={daysUntil(n.deadline)}
+                onEdit={n.id && n.id.startsWith('m_') ? () => onEdit(n) : null}
+                onDelete={n.id && n.id.startsWith('m_') ? () => onDelete(n.id) : null}
+                onOpenUrl={onOpenUrl} onAddToCalendar={onAddToCalendar}
+                onConfirmAttendance={() => onConfirmAttendance(n)} expandable />
+            );
+          })
         )}
       </div>
     </div>
   );
 }
 
-function NoticeCard({ notice, isFavorite, onToggleFavorite, daysLeft, onEdit, onDelete, onOpenUrl, onAddToCalendar, expandable }) {
+function NoticeCard({ notice, isFavorite, isInEvents, onToggleFavorite, daysLeft, onEdit, onDelete, onOpenUrl, onAddToCalendar, onConfirmAttendance, expandable }) {
   const [open, setOpen] = useState(false);
   const isUrgent = daysLeft !== null && daysLeft >= 0 && daysLeft <= 3;
   const isPast = daysLeft !== null && daysLeft < 0;
@@ -593,6 +908,7 @@ function NoticeCard({ notice, isFavorite, onToggleFavorite, daysLeft, onEdit, on
               <span className="text-[10px] font-black text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">{notice.region}</span>
               {notice.id && notice.id.startsWith('m_') && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">직접등록</span>}
               {notice.isNew && <span className="text-[10px] font-black text-white bg-red-500 px-1.5 py-0.5 rounded">NEW</span>}
+              {isInEvents && <span className="text-[10px] font-black text-white bg-green-500 px-1.5 py-0.5 rounded">참가확정</span>}
               <span className="text-[10px] text-stone-500 font-medium truncate">{notice.org}</span>
             </div>
             <h3 className="text-sm font-bold text-stone-900 leading-snug line-clamp-2">{notice.title}</h3>
@@ -619,6 +935,11 @@ function NoticeCard({ notice, isFavorite, onToggleFavorite, daysLeft, onEdit, on
             {notice.fee && <Detail label="비용" value={notice.fee} />}
             {notice.summary && <p className="text-[11px] text-stone-600 leading-relaxed bg-stone-50 p-2.5 rounded-lg">{notice.summary}</p>}
             <div className="flex gap-2 pt-1">
+              {!isInEvents && !isPast && onConfirmAttendance && (
+                <button onClick={onConfirmAttendance} className="bg-green-50 text-green-700 px-3 rounded-xl active:scale-95 flex items-center justify-center gap-1 text-xs font-bold" title="참가확정 → 일정에 추가">
+                  <CheckCircle2 className="w-4 h-4" />확정
+                </button>
+              )}
               {(notice.deadline || notice.eventDate) && onAddToCalendar && (
                 <button onClick={() => onAddToCalendar(notice)} className="bg-blue-50 text-blue-600 px-3 rounded-xl active:scale-95 flex items-center justify-center" title="캘린더에 추가">
                   <Calendar className="w-4 h-4" />
@@ -626,8 +947,7 @@ function NoticeCard({ notice, isFavorite, onToggleFavorite, daysLeft, onEdit, on
               )}
               <button onClick={() => onOpenUrl(notice.url)}
                 className="flex-1 bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 active:scale-95">
-                <ExternalLink className="w-3.5 h-3.5" />
-                공고 보기
+                <ExternalLink className="w-3.5 h-3.5" />공고
               </button>
               {onEdit && <button onClick={onEdit} className="bg-stone-100 text-stone-700 px-3 rounded-xl active:scale-95"><Edit3 className="w-4 h-4" /></button>}
               {onDelete && <button onClick={onDelete} className="bg-red-50 text-red-600 px-3 rounded-xl active:scale-95"><Trash2 className="w-4 h-4" /></button>}
@@ -648,6 +968,222 @@ function Detail({ label, value, icon }) {
   );
 }
 
+// ============ 내 일정 (메인 신규 기능) ============
+function EventsView({ upcomingEvents, pastEvents, filter, setFilter, daysUntil, onEdit, onDelete, onToggleChecklist, onAddChecklistItem, onRemoveChecklistItem, onUpdateRevenue, onAddToCalendar, onAddAllToCalendar, onOpenUrl, onOpenMap }) {
+  const list = filter === 'upcoming' ? upcomingEvents : pastEvents;
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-base font-black text-stone-900 flex items-center gap-2">
+        <CalendarCheck className="w-5 h-5 text-green-600" />내 행사 일정
+      </h2>
+
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={() => setFilter('upcoming')}
+          className={'py-2.5 rounded-xl text-sm font-bold ' + (filter === 'upcoming' ? 'bg-gradient-to-r from-green-500 to-teal-500 text-white shadow-md' : 'bg-stone-100 text-stone-600')}>
+          예정 ({upcomingEvents.length})
+        </button>
+        <button onClick={() => setFilter('past')}
+          className={'py-2.5 rounded-xl text-sm font-bold ' + (filter === 'past' ? 'bg-gradient-to-r from-stone-500 to-stone-700 text-white shadow-md' : 'bg-stone-100 text-stone-600')}>
+          종료 ({pastEvents.length})
+        </button>
+      </div>
+
+      {filter === 'upcoming' && upcomingEvents.length > 0 && (
+        <button onClick={onAddAllToCalendar}
+          className="w-full bg-blue-50 border-2 border-blue-200 text-blue-700 font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95 text-sm">
+          <Calendar className="w-4 h-4" />
+          예정된 일정 모두 캘린더에 추가
+        </button>
+      )}
+
+      <div className="space-y-3">
+        {list.length === 0 ? (
+          <EmptyState
+            message={filter === 'upcoming' ? '예정된 일정이 없어요' : '종료된 일정이 없어요'}
+            sub={filter === 'upcoming' ? '+ 버튼이나 공고에서 [확정] 버튼으로 추가하세요' : ''}
+          />
+        ) : (
+          list.map(e => (
+            <EventCard key={e.id} event={e} daysLeft={daysUntil(e.eventDate)}
+              onEdit={() => onEdit(e)} onDelete={() => onDelete(e.id)}
+              onToggleChecklist={(itemId) => onToggleChecklist(e.id, itemId)}
+              onAddChecklistItem={(text) => onAddChecklistItem(e.id, text)}
+              onRemoveChecklistItem={(itemId) => onRemoveChecklistItem(e.id, itemId)}
+              onUpdateRevenue={(rev) => onUpdateRevenue(e.id, rev)}
+              onAddToCalendar={() => onAddToCalendar(e)}
+              onOpenUrl={() => onOpenUrl(e.url)}
+              onOpenMap={onOpenMap} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EventCard({ event, daysLeft, onEdit, onDelete, onToggleChecklist, onAddChecklistItem, onRemoveChecklistItem, onUpdateRevenue, onAddToCalendar, onOpenUrl, onOpenMap }) {
+  const [open, setOpen] = useState(false);
+  const [newItem, setNewItem] = useState('');
+  const [showRevenueInput, setShowRevenueInput] = useState(false);
+  const [revenueInput, setRevenueInput] = useState(event.actualRevenue || '');
+  const isPast = daysLeft !== null && daysLeft < 0;
+  const isUrgent = daysLeft !== null && daysLeft >= 0 && daysLeft <= 3;
+  const checklist = event.checklist || [];
+  const doneCount = checklist.filter(c => c.done).length;
+  const completedClass = event.completed ? 'opacity-70' : '';
+
+  return (
+    <div className={'border-2 rounded-2xl overflow-hidden ' + (event.completed ? 'bg-stone-50 border-stone-200 ' + completedClass : isPast ? 'bg-stone-50 border-stone-200 opacity-70' : isUrgent ? 'bg-gradient-to-br from-green-50 to-teal-50 border-green-300' : 'bg-white border-stone-200')}>
+      <div className="p-4">
+        <div className="flex items-start gap-3 mb-3">
+          {daysLeft !== null && !event.completed && (
+            <div className={'text-center rounded-xl px-2.5 py-2 min-w-[60px] ' + (isPast ? 'bg-stone-300 text-stone-600' : isUrgent ? 'bg-gradient-to-br from-green-500 to-teal-600 text-white' : 'bg-green-100 text-green-700')}>
+              <div className="text-[9px] font-bold opacity-90">{isPast ? '종료' : daysLeft === 0 ? 'TODAY' : 'D-DAY'}</div>
+              <div className="text-base font-black leading-none mt-0.5">{isPast ? '✓' : daysLeft === 0 ? '!' : 'D-' + daysLeft}</div>
+            </div>
+          )}
+          {event.completed && (
+            <div className="bg-green-500 text-white rounded-xl px-2.5 py-2 text-center min-w-[60px]">
+              <div className="text-[9px] font-bold opacity-90">완료</div>
+              <div className="text-lg font-black leading-none mt-0.5">✓</div>
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="text-[10px] font-black text-green-600 bg-green-50 px-1.5 py-0.5 rounded">{event.region}</span>
+              {event.fromNoticeId && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">공고출처</span>}
+            </div>
+            <h3 className="text-sm font-bold text-stone-900 leading-snug">{event.title}</h3>
+            {event.eventDate && (
+              <div className="flex items-center gap-1 mt-1.5 text-[11px] text-stone-600">
+                <Calendar className="w-3 h-3" />{event.eventDate}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {event.location && (
+          <div className="flex items-center gap-2 mb-2 p-2 bg-stone-50 rounded-lg">
+            <MapPin className="w-3.5 h-3.5 text-stone-500 shrink-0" />
+            <span className="text-xs text-stone-700 flex-1 truncate font-medium">{event.location}</span>
+            <button onClick={() => onOpenMap(event.location, 'search')}
+              className="bg-green-100 text-green-700 px-2 py-1 rounded-md text-[10px] font-bold active:scale-95 flex items-center gap-1">
+              <Map className="w-3 h-3" />지도
+            </button>
+            <button onClick={() => onOpenMap(event.location, 'route')}
+              className="bg-blue-100 text-blue-700 px-2 py-1 rounded-md text-[10px] font-bold active:scale-95 flex items-center gap-1">
+              <Navigation className="w-3 h-3" />길찾기
+            </button>
+          </div>
+        )}
+
+        {checklist.length > 0 && !open && (
+          <div className="text-[11px] text-stone-600 mb-2 flex items-center gap-2">
+            <CheckSquare className="w-3.5 h-3.5" />
+            <span>준비물 {doneCount}/{checklist.length} 완료</span>
+            <div className="flex-1 bg-stone-100 rounded-full h-1.5 overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-green-500 to-teal-500" style={{ width: (doneCount / checklist.length * 100) + '%' }} />
+            </div>
+          </div>
+        )}
+
+        {event.actualRevenue && (
+          <div className="text-[11px] text-stone-600 mb-2 flex items-center gap-2">
+            <span className="font-bold text-green-700">💰 실제 수익:</span>
+            <span className="font-black text-stone-900">{event.actualRevenue}</span>
+          </div>
+        )}
+
+        <button onClick={() => setOpen(!open)}
+          className="w-full text-[11px] font-bold text-stone-500 flex items-center justify-center gap-1 mt-1">
+          {open ? '접기' : '자세히 / 준비물'}
+          <ChevronRight className={'w-3 h-3 transition-transform ' + (open ? 'rotate-90' : '')} />
+        </button>
+
+        {open && (
+          <div className="mt-3 pt-3 border-t border-stone-100 space-y-3">
+            {event.org && <Detail label="주관" value={event.org} />}
+            {event.fee && <Detail label="참가비" value={event.fee} />}
+            {event.expectedRevenue && <Detail label="예상수익" value={event.expectedRevenue} />}
+            {event.memo && <p className="text-[11px] text-stone-600 leading-relaxed bg-stone-50 p-2.5 rounded-lg">{event.memo}</p>}
+
+            {/* 체크리스트 */}
+            <div>
+              <div className="text-xs font-black text-stone-700 mb-2 flex items-center gap-1">
+                <CheckSquare className="w-4 h-4" />
+                준비물 체크리스트 ({doneCount}/{checklist.length})
+              </div>
+              <div className="space-y-1.5">
+                {checklist.map(c => (
+                  <div key={c.id} className="flex items-center gap-2 group">
+                    <button onClick={() => onToggleChecklist(c.id)} className="active:scale-95">
+                      {c.done ? <CheckSquare className="w-5 h-5 text-green-600" /> : <Square className="w-5 h-5 text-stone-400" />}
+                    </button>
+                    <span className={'flex-1 text-sm ' + (c.done ? 'line-through text-stone-400' : 'text-stone-700')}>{c.text}</span>
+                    <button onClick={() => onRemoveChecklistItem(c.id)} className="text-red-400 active:scale-95 opacity-0 group-hover:opacity-100">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex gap-1.5 mt-2">
+                  <input type="text" value={newItem} onChange={(e) => setNewItem(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { onAddChecklistItem(newItem); setNewItem(''); } }}
+                    placeholder="준비물 추가..."
+                    className="flex-1 px-3 py-2 bg-stone-50 rounded-lg text-xs focus:outline-none focus:bg-stone-100" />
+                  <button onClick={() => { onAddChecklistItem(newItem); setNewItem(''); }}
+                    className="bg-stone-700 text-white px-3 rounded-lg text-xs font-bold active:scale-95">+</button>
+                </div>
+              </div>
+            </div>
+
+            {/* 수익 입력 */}
+            {(isPast || event.completed) && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                <div className="text-xs font-black text-amber-900 mb-2">💰 실제 수익 기록</div>
+                {showRevenueInput || !event.actualRevenue ? (
+                  <div className="flex gap-2">
+                    <input type="text" value={revenueInput} onChange={(e) => setRevenueInput(e.target.value)}
+                      placeholder="예: 850000 또는 85만원"
+                      className="flex-1 px-3 py-2 bg-white border border-amber-300 rounded-lg text-sm focus:outline-none" />
+                    <button onClick={() => { onUpdateRevenue(revenueInput); setShowRevenueInput(false); }}
+                      className="bg-amber-500 text-white px-4 rounded-lg text-xs font-bold active:scale-95">저장</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowRevenueInput(true)}
+                    className="w-full bg-white border border-amber-300 text-amber-900 py-2 rounded-lg text-xs font-bold active:scale-95">
+                    수정하기
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* 액션 버튼 */}
+            <div className="flex gap-2 pt-1">
+              {event.eventDate && (
+                <button onClick={onAddToCalendar} className="bg-blue-50 text-blue-600 px-3 py-2.5 rounded-xl active:scale-95 flex items-center justify-center" title="캘린더에 추가">
+                  <Calendar className="w-4 h-4" />
+                </button>
+              )}
+              {event.url && (
+                <button onClick={onOpenUrl} className="bg-stone-100 text-stone-700 px-3 py-2.5 rounded-xl active:scale-95 flex items-center justify-center" title="원본 공고">
+                  <ExternalLink className="w-4 h-4" />
+                </button>
+              )}
+              <button onClick={onEdit} className="flex-1 bg-stone-100 text-stone-700 text-xs font-bold py-2.5 rounded-xl active:scale-95 flex items-center justify-center gap-1.5">
+                <Edit3 className="w-3.5 h-3.5" />수정
+              </button>
+              <button onClick={onDelete} className="bg-red-50 text-red-600 px-3 py-2.5 rounded-xl active:scale-95">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============ 사이트 ============
 function SitesView({ sites, onOpenUrl, onRemoveSite, onOpenSiteManager }) {
   const grouped = sites.reduce((acc, s) => {
     if (!acc[s.region]) acc[s.region] = [];
@@ -661,19 +1197,14 @@ function SitesView({ sites, onOpenUrl, onRemoveSite, onOpenSiteManager }) {
         className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-3 rounded-2xl flex items-center justify-center gap-2 active:scale-95 shadow-md">
         <Plus className="w-5 h-5" />새 사이트 추가
       </button>
-      <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-3.5">
-        <p className="text-[11px] text-amber-900 leading-relaxed font-medium">
-          💡 각 사이트를 눌러 푸드트럭 모집 공고를 확인하세요. 직접 발견한 공고는 [공고] 탭의 + 버튼으로 등록할 수 있어요.
-        </p>
-      </div>
       {Object.keys(grouped).length === 0 ? (
         <EmptyState message="이 지역에 등록된 사이트가 없어요" sub="상단 + 버튼으로 사이트를 추가해보세요" />
       ) : (
         Object.keys(grouped).map(region => (
           <section key={region}>
-            <h2 className="text-sm font-black text-stone-900 mb-2.5 flex items-center gap-2">
+            <h2 className="text-sm font-black text-stone-900 mb-2.5">
               <span className="bg-gradient-to-r from-orange-500 to-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-md">{region}</span>
-              <span className="text-stone-400 font-medium text-[11px]">{grouped[region].length}개</span>
+              <span className="text-stone-400 font-medium text-[11px] ml-2">{grouped[region].length}개</span>
             </h2>
             <div className="space-y-2">
               {grouped[region].map((s, i) => {
@@ -710,41 +1241,52 @@ function SitesView({ sites, onOpenUrl, onRemoveSite, onOpenSiteManager }) {
   );
 }
 
-function SiteChip({ site, onOpenUrl }) {
-  return (
-    <button onClick={() => onOpenUrl(site.url)}
-      className="text-left bg-stone-50 active:bg-stone-100 border border-stone-200 rounded-xl p-2.5 active:scale-95">
-      <div className="text-[10px] font-black text-orange-600 mb-0.5">{site.region}</div>
-      <div className="text-[11px] font-bold text-stone-800 leading-tight line-clamp-2">{site.name}</div>
-    </button>
-  );
-}
+// ============ 설정 ============
+function SettingsView({ settings, onChange, noticeCount, favoriteCount, eventCount, stats, customRegions, customSites, lastSync, onRefresh, refreshing, onOpenRegionManager, onOpenSiteManager }) {
+  const sortedRegions = Object.entries(stats.byRegion).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-function FavoritesView({ notices, onToggleFavorite, daysUntil, onOpenUrl, onAddToCalendar }) {
-  return (
-    <div className="space-y-4">
-      <h2 className="text-base font-black text-stone-900 flex items-center gap-2">
-        <Heart className="w-5 h-5 fill-red-500 text-red-500" />즐겨찾는 공고
-      </h2>
-      <div className="space-y-2.5">
-        {notices.length === 0 ? (
-          <EmptyState message="즐겨찾는 공고가 없어요" sub="공고에 ⭐를 눌러 즐겨찾기에 추가해보세요" />
-        ) : (
-          notices.map(n => (
-            <NoticeCard key={n.id} notice={n} isFavorite={true}
-              onToggleFavorite={() => onToggleFavorite(n.id)}
-              daysLeft={daysUntil(n.deadline)} onOpenUrl={onOpenUrl} onAddToCalendar={onAddToCalendar} expandable />
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SettingsView({ settings, onChange, noticeCount, favoriteCount, customRegions, customSites, lastSync, onRefresh, refreshing, onOpenRegionManager, onOpenSiteManager }) {
   return (
     <div className="space-y-5">
       <h2 className="text-base font-black text-stone-900">설정</h2>
+
+      {/* 비즈니스 통계 */}
+      <section className="bg-gradient-to-br from-purple-500 to-pink-500 text-white rounded-2xl p-5 shadow-lg">
+        <h3 className="text-sm font-black mb-3 flex items-center gap-2">
+          <TrendingUp className="w-4 h-4" />
+          비즈니스 통계
+        </h3>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="bg-white/15 backdrop-blur rounded-xl p-3">
+            <div className="text-[10px] opacity-90 mb-1">이번달 행사</div>
+            <div className="text-2xl font-black">{stats.thisMonthCount}</div>
+          </div>
+          <div className="bg-white/15 backdrop-blur rounded-xl p-3">
+            <div className="text-[10px] opacity-90 mb-1">이번달 수익</div>
+            <div className="text-2xl font-black">{stats.thisMonthRevenue > 0 ? Math.round(stats.thisMonthRevenue / 10000) + '만원' : '-'}</div>
+          </div>
+        </div>
+        <div className="bg-white/15 backdrop-blur rounded-xl p-3">
+          <div className="text-[10px] opacity-90 mb-1">누적 수익</div>
+          <div className="text-xl font-black">{stats.totalRevenue > 0 ? stats.totalRevenue.toLocaleString() + '원' : '아직 기록된 수익 없음'}</div>
+        </div>
+        {sortedRegions.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-white/20">
+            <div className="text-[10px] opacity-90 mb-2">지역별 행사 (TOP 5)</div>
+            <div className="space-y-1">
+              {sortedRegions.map(([region, count]) => (
+                <div key={region} className="flex items-center gap-2 text-xs">
+                  <span className="font-bold w-12">{region}</span>
+                  <div className="flex-1 bg-white/10 rounded-full h-2 overflow-hidden">
+                    <div className="h-full bg-white" style={{ width: (count / sortedRegions[0][1] * 100) + '%' }} />
+                  </div>
+                  <span className="font-bold w-8 text-right">{count}건</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
       <section className="bg-white border-2 border-stone-200 rounded-2xl overflow-hidden">
         <div className="px-4 py-3 bg-stone-50 border-b border-stone-200">
           <h3 className="text-xs font-black text-stone-700">알림</h3>
@@ -767,6 +1309,7 @@ function SettingsView({ settings, onChange, noticeCount, favoriteCount, customRe
           </div>
         </div>
       </section>
+
       <section className="bg-white border-2 border-stone-200 rounded-2xl overflow-hidden">
         <div className="px-4 py-3 bg-stone-50 border-b border-stone-200">
           <h3 className="text-xs font-black text-stone-700">내 지역 / 사이트</h3>
@@ -800,25 +1343,17 @@ function SettingsView({ settings, onChange, noticeCount, favoriteCount, customRe
           </button>
         </div>
       </section>
-      <section className="bg-white border-2 border-stone-200 rounded-2xl p-4">
-        <h3 className="text-xs font-black text-stone-700 mb-3">동기화</h3>
-        <button onClick={onRefresh} disabled={refreshing}
-          className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50">
-          <RefreshCw className={'w-4 h-4 ' + (refreshing ? 'animate-spin' : '')} />
-          {refreshing ? '동기화 중...' : '지금 새로고침'}
-        </button>
-        {lastSync && (
-          <p className="text-center text-[11px] text-stone-500 mt-2 font-medium">
-            마지막 동기화: {lastSync.toLocaleString('ko-KR')}
-          </p>
-        )}
-      </section>
+
       <section className="bg-white border-2 border-stone-200 rounded-2xl p-4">
         <h3 className="text-xs font-black text-stone-700 mb-3">내 데이터</h3>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-2">
           <div className="text-center bg-stone-50 rounded-xl p-3">
             <div className="text-2xl font-black text-orange-600">{noticeCount}</div>
             <div className="text-[10px] text-stone-500 font-medium mt-0.5">전체 공고</div>
+          </div>
+          <div className="text-center bg-stone-50 rounded-xl p-3">
+            <div className="text-2xl font-black text-green-600">{eventCount}</div>
+            <div className="text-[10px] text-stone-500 font-medium mt-0.5">내 일정</div>
           </div>
           <div className="text-center bg-stone-50 rounded-xl p-3">
             <div className="text-2xl font-black text-red-500">{favoriteCount}</div>
@@ -826,17 +1361,19 @@ function SettingsView({ settings, onChange, noticeCount, favoriteCount, customRe
           </div>
         </div>
       </section>
+
       <section className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-4">
         <h3 className="text-xs font-black text-amber-900 mb-2">📱 앱 사용 안내</h3>
         <ul className="text-[11px] text-amber-900 space-y-1.5 leading-relaxed font-medium">
-          <li>• 전국 245개 지자체 검색 추가 가능</li>
-          <li>• 지역 추가 시 시청 사이트도 자동 등록</li>
-          <li>• 마감일/행사일은 📅 버튼으로 캘린더에 자동 추가</li>
+          <li>• 공고 → [확정] 누르면 자동으로 일정에 추가</li>
+          <li>• 일정에서 📍 → 지도/길찾기 (네이버 지도 연동)</li>
+          <li>• 행사 끝나면 실제 수익 기록 → 통계에 반영</li>
           <li>• 모든 데이터는 본인 기기에만 저장됩니다</li>
         </ul>
       </section>
+
       <p className="text-center text-[10px] text-stone-400 font-medium pt-2">
-        푸드트럭 알리미 v1.2.0
+        푸드트럭 알리미 v1.3.0
       </p>
     </div>
   );
@@ -857,6 +1394,7 @@ function ToggleRow({ title, sub, value, onChange }) {
   );
 }
 
+// ============ 공고 폼 ============
 function NoticeForm({ initial, onSave, onClose, regions }) {
   const [form, setForm] = useState(initial || {
     region: regions[0] || '논산', title: '', org: '', deadline: '', eventDate: '', location: '', url: '', summary: '', fee: '',
@@ -928,6 +1466,95 @@ function NoticeForm({ initial, onSave, onClose, regions }) {
   );
 }
 
+// ============ 일정 폼 ============
+function EventForm({ initial, onSave, onClose, regions, onOpenMap }) {
+  const [form, setForm] = useState(initial || {
+    region: regions[0] || '논산', title: '', org: '', eventDate: '', location: '',
+    fee: '', expectedRevenue: '', actualRevenue: '', memo: '', url: '',
+    checklist: DEFAULT_CHECKLIST.map(c => ({ ...c })), completed: false,
+  });
+  const update = (key, value) => setForm(f => ({ ...f, [key]: value }));
+  const handleSubmit = () => {
+    if (!form.title) { alert('행사 제목은 필수입니다'); return; }
+    onSave(form);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center sm:items-center p-0 sm:p-4">
+      <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl max-h-[92vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-stone-200 px-5 py-4 flex items-center justify-between z-10">
+          <h2 className="text-base font-black text-stone-900 flex items-center gap-2">
+            <CalendarCheck className="w-5 h-5 text-green-600" />
+            {initial ? '일정 수정' : '새 일정 등록'}
+          </h2>
+          <button onClick={onClose} className="p-1 -mr-1"><X className="w-5 h-5 text-stone-500" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <Field label="지역 *">
+            <div className="grid grid-cols-4 gap-1.5 max-h-32 overflow-y-auto">
+              {regions.map(r => (
+                <button key={r} onClick={() => update('region', r)}
+                  className={'py-2 rounded-lg text-xs font-bold ' + (form.region === r ? 'bg-gradient-to-r from-green-500 to-teal-500 text-white' : 'bg-stone-100 text-stone-600')}>
+                  {r}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="행사 제목 *">
+            <input type="text" value={form.title} onChange={(e) => update('title', e.target.value)}
+              placeholder="예: 부여 서동연꽃축제"
+              className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
+          </Field>
+          <Field label="주관">
+            <input type="text" value={form.org} onChange={(e) => update('org', e.target.value)} placeholder="예: 부여군청"
+              className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
+          </Field>
+          <Field label="행사 일시">
+            <input type="text" value={form.eventDate} onChange={(e) => update('eventDate', e.target.value)} placeholder="예: 2026-07-15 (D-Day 표시용)"
+              className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
+          </Field>
+          <Field label="📍 장소">
+            <div className="space-y-2">
+              <input type="text" value={form.location} onChange={(e) => update('location', e.target.value)} placeholder="예: 부여 궁남지"
+                className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
+              {form.location && (
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => onOpenMap(form.location, 'search')}
+                    className="flex-1 bg-green-100 text-green-700 font-bold text-xs py-2 rounded-lg active:scale-95 flex items-center justify-center gap-1">
+                    <Map className="w-3.5 h-3.5" />네이버 지도에서 확인
+                  </button>
+                </div>
+              )}
+              <p className="text-[10px] text-stone-500">💡 장소 입력 후 일정 카드에서 길찾기 버튼이 활성화돼요</p>
+            </div>
+          </Field>
+          <Field label="참가비">
+            <input type="text" value={form.fee} onChange={(e) => update('fee', e.target.value)} placeholder="예: 30만원"
+              className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
+          </Field>
+          <Field label="💰 예상 수익">
+            <input type="text" value={form.expectedRevenue} onChange={(e) => update('expectedRevenue', e.target.value)} placeholder="예: 100만원"
+              className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
+          </Field>
+          <Field label="공고 URL">
+            <input type="url" value={form.url} onChange={(e) => update('url', e.target.value)} placeholder="https://..."
+              className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
+          </Field>
+          <Field label="메모">
+            <textarea value={form.memo} onChange={(e) => update('memo', e.target.value)} rows={3} placeholder="특이사항, 메뉴 계획 등"
+              className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200 resize-none" />
+          </Field>
+          <button onClick={handleSubmit}
+            className="w-full bg-gradient-to-r from-green-500 to-teal-500 text-white font-black py-3.5 rounded-2xl text-sm shadow-lg active:scale-95">
+            {initial ? '수정 완료' : '일정 등록'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ 지역 관리 ============
 function RegionManager({ customRegions, defaultRegions, onAddFromDB, onAddManual, onRemove, onClose }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [manualName, setManualName] = useState('');
@@ -964,9 +1591,6 @@ function RegionManager({ customRegions, defaultRegions, onAddFromDB, onAddManual
                 placeholder="시·군·구 이름 (예: 천안, 강릉, 제주)"
                 className="w-full pl-10 pr-4 py-3 bg-purple-50 border-2 border-purple-200 rounded-xl text-sm font-medium focus:outline-none focus:border-purple-400" />
             </div>
-            <p className="text-[10px] text-stone-500 mt-1.5">
-              💡 전국 245개 지자체에서 검색됩니다. 선택하면 시청 사이트도 자동 추가돼요.
-            </p>
             {searchQuery.trim() && (
               <div className="mt-3 space-y-3 max-h-80 overflow-y-auto">
                 {searchResults.length === 0 ? (
@@ -979,19 +1603,13 @@ function RegionManager({ customRegions, defaultRegions, onAddFromDB, onAddManual
                         {groupedResults[province].map(r => {
                           const isAlreadyAdded = defaultRegions.includes(r.name) || customRegions.includes(r.name);
                           return (
-                            <button key={r.name}
-                              onClick={() => !isAlreadyAdded && onAddFromDB(r)}
-                              disabled={isAlreadyAdded}
-                              className={'w-full text-left p-2.5 rounded-lg flex items-center justify-between ' + (isAlreadyAdded ? 'bg-stone-50 text-stone-400 cursor-not-allowed' : 'bg-white border border-stone-200 active:bg-purple-50 active:scale-[0.98]')}>
+                            <button key={r.name} onClick={() => !isAlreadyAdded && onAddFromDB(r)} disabled={isAlreadyAdded}
+                              className={'w-full text-left p-2.5 rounded-lg flex items-center justify-between ' + (isAlreadyAdded ? 'bg-stone-50 text-stone-400' : 'bg-white border border-stone-200 active:bg-purple-50')}>
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-bold truncate">{r.name}</div>
                                 <div className="text-[10px] text-stone-500 truncate">{r.domain}</div>
                               </div>
-                              {isAlreadyAdded ? (
-                                <span className="text-[10px] font-bold text-stone-400">추가됨</span>
-                              ) : (
-                                <Plus className="w-4 h-4 text-purple-600 shrink-0" />
-                              )}
+                              {isAlreadyAdded ? <span className="text-[10px] font-bold text-stone-400">추가됨</span> : <Plus className="w-4 h-4 text-purple-600 shrink-0" />}
                             </button>
                           );
                         })}
@@ -1002,26 +1620,17 @@ function RegionManager({ customRegions, defaultRegions, onAddFromDB, onAddManual
               </div>
             )}
           </div>
-
           <details className="bg-stone-50 rounded-xl p-3">
-            <summary className="text-xs font-black text-stone-700 cursor-pointer">
-              ➕ DB에 없는 지역 직접 추가
-            </summary>
+            <summary className="text-xs font-black text-stone-700 cursor-pointer">➕ DB에 없는 지역 직접 추가</summary>
             <div className="mt-3 flex gap-2">
               <input type="text" value={manualName} onChange={(e) => setManualName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { onAddManual(manualName); setManualName(''); } }}
                 placeholder="지역 이름 직접 입력"
                 className="flex-1 px-4 py-2.5 bg-white rounded-lg text-sm font-medium focus:outline-none border border-stone-200" />
               <button onClick={() => { onAddManual(manualName); setManualName(''); }}
-                className="bg-stone-700 text-white px-4 rounded-lg font-bold text-sm active:scale-95">
-                추가
-              </button>
+                className="bg-stone-700 text-white px-4 rounded-lg font-bold text-sm active:scale-95">추가</button>
             </div>
-            <p className="text-[10px] text-stone-500 mt-2">
-              사이트는 [사이트 관리]에서 별도로 추가하세요
-            </p>
           </details>
-
           <div>
             <h3 className="text-xs font-black text-stone-700 mb-2">내가 추가한 지역 ({customRegions.length})</h3>
             {customRegions.length === 0 ? (
@@ -1039,7 +1648,6 @@ function RegionManager({ customRegions, defaultRegions, onAddFromDB, onAddManual
               </div>
             )}
           </div>
-
           <div>
             <h3 className="text-xs font-black text-stone-700 mb-2">기본 지역 ({defaultRegions.length})</h3>
             <div className="flex flex-wrap gap-1.5">
@@ -1047,7 +1655,6 @@ function RegionManager({ customRegions, defaultRegions, onAddFromDB, onAddManual
                 <span key={r} className="text-[11px] font-bold text-stone-600 bg-stone-100 px-2.5 py-1 rounded-md">{r}</span>
               ))}
             </div>
-            <p className="text-[10px] text-stone-400 mt-1.5">기본 지역은 삭제할 수 없어요</p>
           </div>
         </div>
       </div>
@@ -1055,6 +1662,7 @@ function RegionManager({ customRegions, defaultRegions, onAddFromDB, onAddManual
   );
 }
 
+// ============ 사이트 관리 ============
 function SiteManager({ customSites, regions, onAdd, onRemove, onClose }) {
   const [form, setForm] = useState({ region: regions[0] || '논산', name: '', url: '', type: '관공서' });
 
@@ -1091,7 +1699,7 @@ function SiteManager({ customSites, regions, onAdd, onRemove, onClose }) {
                 className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
             </Field>
             <Field label="URL">
-              <input type="url" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://www.cheonan.go.kr/..."
+              <input type="url" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://..."
                 className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
             </Field>
             <Field label="유형">
