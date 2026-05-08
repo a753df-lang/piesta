@@ -2,10 +2,8 @@
 import { Preferences } from '@capacitor/preferences';
 import { Network } from '@capacitor/network';
 
-// ⚠️ 배포 시 이 주소를 실제 서버 도메인으로 변경하세요
 export const API_BASE = 'https://your-server.com';
 
-// API: 공고 목록 조회
 export async function fetchNotices({ region, search } = {}) {
   const params = new URLSearchParams();
   if (region && region !== '전체') params.set('region', region);
@@ -35,18 +33,8 @@ export async function fetchNotices({ region, search } = {}) {
       createdAt: n.created_at,
     }));
   } catch (err) {
-    // 서버가 없거나 연결 실패 시 빈 배열 반환 (앱은 정상 동작)
     console.warn('서버 연결 실패:', err.message);
     return [];
-  }
-}
-
-export async function fetchStats() {
-  try {
-    const res = await fetch(`${API_BASE}/api/stats`);
-    return await res.json();
-  } catch {
-    return null;
   }
 }
 
@@ -59,7 +47,6 @@ export async function isOnline() {
   }
 }
 
-// ========== 로컬 저장소 ==========
 const KEYS = {
   cachedNotices: 'cached_notices',
   favorites: 'favorites',
@@ -68,6 +55,7 @@ const KEYS = {
   seenIds: 'seen_ids',
   customRegions: 'custom_regions',
   customSites: 'custom_sites',
+  events: 'my_events',
 };
 
 export const storage = {
@@ -78,7 +66,6 @@ export const storage = {
   async setCachedNotices(notices) {
     await Preferences.set({ key: KEYS.cachedNotices, value: JSON.stringify(notices) });
   },
-
   async getFavorites() {
     const { value } = await Preferences.get({ key: KEYS.favorites });
     return new Set(value ? JSON.parse(value) : []);
@@ -86,7 +73,6 @@ export const storage = {
   async setFavorites(set) {
     await Preferences.set({ key: KEYS.favorites, value: JSON.stringify([...set]) });
   },
-
   async getManualNotices() {
     const { value } = await Preferences.get({ key: KEYS.manualNotices });
     return value ? JSON.parse(value) : [];
@@ -94,20 +80,15 @@ export const storage = {
   async setManualNotices(list) {
     await Preferences.set({ key: KEYS.manualNotices, value: JSON.stringify(list) });
   },
-
   async getSettings() {
     const { value } = await Preferences.get({ key: KEYS.settings });
     return value ? JSON.parse(value) : {
-      notifyEnabled: true,
-      notifyDays: 3,
-      regions: ['전체'],
-      autoRefresh: true,
+      notifyEnabled: true, notifyDays: 3, autoRefresh: true,
     };
   },
   async setSettings(s) {
     await Preferences.set({ key: KEYS.settings, value: JSON.stringify(s) });
   },
-
   async getSeenIds() {
     const { value } = await Preferences.get({ key: KEYS.seenIds });
     return new Set(value ? JSON.parse(value) : []);
@@ -118,8 +99,6 @@ export const storage = {
     const arr = [...set].slice(-1000);
     await Preferences.set({ key: KEYS.seenIds, value: JSON.stringify(arr) });
   },
-
-  // 사용자 정의 지역
   async getCustomRegions() {
     const { value } = await Preferences.get({ key: KEYS.customRegions });
     return value ? JSON.parse(value) : [];
@@ -127,13 +106,18 @@ export const storage = {
   async setCustomRegions(list) {
     await Preferences.set({ key: KEYS.customRegions, value: JSON.stringify(list) });
   },
-
-  // 사용자 정의 사이트
   async getCustomSites() {
     const { value } = await Preferences.get({ key: KEYS.customSites });
     return value ? JSON.parse(value) : [];
   },
   async setCustomSites(list) {
     await Preferences.set({ key: KEYS.customSites, value: JSON.stringify(list) });
+  },
+  async getEvents() {
+    const { value } = await Preferences.get({ key: KEYS.events });
+    return value ? JSON.parse(value) : [];
+  },
+  async setEvents(list) {
+    await Preferences.set({ key: KEYS.events, value: JSON.stringify(list) });
   },
 };
