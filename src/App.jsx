@@ -43,7 +43,35 @@ const DEFAULT_CHECKLIST = [
   { id: 'c5', text: '메뉴판 준비', done: false },
 ];
 
-// ============ 네이버 지도 헬퍼 ============
+// 금액 포맷팅: 숫자 → "850,000원"
+function formatMoney(val) {
+  if (!val) return '';
+  const num = parseInt(String(val).replace(/[^\d]/g, '')) || 0;
+  if (num === 0) return '';
+  return num.toLocaleString() + '원';
+}
+
+// 금액 입력값에서 숫자만 추출
+function parseMoney(val) {
+  if (!val) return '';
+  return String(val).replace(/[^\d]/g, '');
+}
+
+// 날짜 표시: YYYY-MM-DD → "2026년 7월 15일"
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const m = String(dateStr).match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!m) return dateStr;
+  return `${m[1]}년 ${parseInt(m[2])}월 ${parseInt(m[3])}일`;
+}
+
+// 시작-종료 합쳐서 표시
+function formatDateRange(start, end) {
+  if (!start) return '';
+  if (!end || start === end) return formatDate(start);
+  return `${formatDate(start)} ~ ${formatDate(end)}`;
+}
+
 async function openNaverMap(location, mode = 'search') {
   if (!location || !location.trim()) {
     alert('장소가 입력되지 않았어요');
@@ -53,30 +81,20 @@ async function openNaverMap(location, mode = 'search') {
   let appUrl, webUrl;
 
   if (mode === 'search') {
-    // 네이버 지도 앱으로 장소 검색
     appUrl = `nmap://search?query=${encoded}&appname=com.foodtruck.alarm`;
     webUrl = `https://map.naver.com/v5/search/${encoded}`;
   } else if (mode === 'route') {
-    // 네이버 지도 앱으로 길찾기 (현재 위치 → 장소)
     appUrl = `nmap://route/car?dlat=&dlng=&dname=${encoded}&appname=com.foodtruck.alarm`;
     webUrl = `https://map.naver.com/v5/directions/-/-/${encoded}`;
   }
 
-  // 모바일에서 앱 우선 시도, 실패 시 웹으로
   try {
-    // Capacitor Browser는 nmap:// 같은 커스텀 스킴 처리 안 됨
-    // window.location.href 로 직접 시도
     const start = Date.now();
     window.location.href = appUrl;
-
-    // 1.5초 후 앱이 안 열렸으면 웹으로 fallback
     setTimeout(() => {
       if (Date.now() - start < 2000 && !document.hidden) {
-        try {
-          Browser.open({ url: webUrl });
-        } catch {
-          window.open(webUrl, '_blank');
-        }
+        try { Browser.open({ url: webUrl }); }
+        catch { window.open(webUrl, '_blank'); }
       }
     }, 1500);
   } catch {
@@ -108,6 +126,7 @@ export default function App() {
   const [showEventForm, setShowEventForm] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
   const [eventTabFilter, setEventTabFilter] = useState('upcoming');
+  const [selectedEventId, setSelectedEventId] = useState(null); // 🆕 홈에서 일정 선택 시
 
   const allNotices = useMemo(() => [...serverNotices, ...manualNotices], [serverNotices, manualNotices]);
   const allRegions = useMemo(() => ['전체', ...DEFAULT_REGIONS, ...customRegions], [customRegions]);
@@ -258,12 +277,7 @@ export default function App() {
   const toggleChecklistItem = async (eventId, itemId) => {
     const next = events.map(e => {
       if (e.id !== eventId) return e;
-      return {
-        ...e,
-        checklist: (e.checklist || []).map(c =>
-          c.id === itemId ? { ...c, done: !c.done } : c
-        ),
-      };
+      return { ...e, checklist: (e.checklist || []).map(c => c.id === itemId ? { ...c, done: !c.done } : c) };
     });
     setEvents(next);
     await storage.setEvents(next);
@@ -273,10 +287,7 @@ export default function App() {
     if (!text.trim()) return;
     const next = events.map(e => {
       if (e.id !== eventId) return e;
-      return {
-        ...e,
-        checklist: [...(e.checklist || []), { id: 'c_' + Date.now(), text: text.trim(), done: false }],
-      };
+      return { ...e, checklist: [...(e.checklist || []), { id: 'c_' + Date.now(), text: text.trim(), done: false }] };
     });
     setEvents(next);
     await storage.setEvents(next);
@@ -305,12 +316,25 @@ export default function App() {
       alert('이미 일정에 추가된 공고입니다');
       return;
     }
+    // 공고에서 행사일 추출 (있다면)
+    let startDate = '', endDate = '';
+    if (notice.eventDate) {
+      const m = notice.eventDate.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+      if (m) {
+        startDate = `${m[1]}-${String(parseInt(m[2])).padStart(2, '0')}-${String(parseInt(m[3])).padStart(2, '0')}`;
+        // 끝 날짜 패턴 찾기 (예: 2026-09-25 ~ 2026-10-04)
+        const m2 = notice.eventDate.match(/[~\-]\s*(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+        if (m2) {
+          endDate = `${m2[1]}-${String(parseInt(m2[2])).padStart(2, '0')}-${String(parseInt(m2[3])).padStart(2, '0')}`;
+        }
+      }
+    }
     const newEvent = {
       id: 'ev_' + Date.now(),
       title: notice.title,
       region: notice.region,
       org: notice.org || '',
-      eventDate: notice.eventDate || notice.deadline || '',
+      startDate, endDate,
       location: notice.location || '',
       fee: notice.fee || '',
       expectedRevenue: '',
@@ -328,33 +352,39 @@ export default function App() {
     alert('✅ 일정에 추가되었어요!\n[내일정] 탭에서 확인할 수 있어요');
   };
 
+  // 캘린더 추가 (일정 또는 공고)
   const addToCalendar = async (item, isEvent = false) => {
-    const dateStr = isEvent ? item.eventDate : (item.deadline || item.eventDate);
-    if (!dateStr && !item.eventDate) {
-      alert('날짜가 없어 캘린더에 추가할 수 없어요');
-      return;
-    }
     const evList = [];
+
     if (isEvent) {
-      const m = dateStr.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
-      if (m) {
-        const evStart = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]), 9, 0, 0);
-        const evEnd = new Date(evStart);
-        evEnd.setHours(18, 0, 0, 0);
-        const checklistText = (item.checklist || []).map(c => '☐ ' + c.text).join('\n');
-        evList.push({
-          title: '🚚 ' + item.title,
-          start: evStart, end: evEnd,
-          details: '푸드트럭 행사\n주관: ' + (item.org || '-') + '\n지역: ' + item.region +
-            (item.fee ? '\n참가비: ' + item.fee : '') +
-            (item.expectedRevenue ? '\n예상수익: ' + item.expectedRevenue : '') +
-            (item.memo ? '\n\n' + item.memo : '') +
-            (checklistText ? '\n\n[준비물]\n' + checklistText : '') +
-            (item.url ? '\n\n공고: ' + item.url : ''),
-          location: item.location || '',
-        });
+      // 일정 - 시작일~종료일
+      if (!item.startDate) {
+        alert('시작일이 없어 캘린더에 추가할 수 없어요');
+        return;
       }
+      const [sy, sm, sd] = item.startDate.split('-').map(Number);
+      const evStart = new Date(sy, sm - 1, sd, 9, 0, 0);
+      let evEnd;
+      if (item.endDate && item.endDate !== item.startDate) {
+        const [ey, em, ed] = item.endDate.split('-').map(Number);
+        evEnd = new Date(ey, em - 1, ed, 18, 0, 0);
+      } else {
+        evEnd = new Date(sy, sm - 1, sd, 18, 0, 0);
+      }
+      const checklistText = (item.checklist || []).map(c => '☐ ' + c.text).join('\n');
+      evList.push({
+        title: '🚚 ' + item.title,
+        start: evStart, end: evEnd,
+        details: '푸드트럭 행사\n주관: ' + (item.org || '-') + '\n지역: ' + item.region +
+          (item.fee ? '\n참가비: ' + item.fee : '') +
+          (item.expectedRevenue ? '\n예상수익: ' + item.expectedRevenue : '') +
+          (item.memo ? '\n\n' + item.memo : '') +
+          (checklistText ? '\n\n[준비물]\n' + checklistText : '') +
+          (item.url ? '\n\n공고: ' + item.url : ''),
+        location: item.location || '',
+      });
     } else {
+      // 공고 - 마감일 + 행사일
       if (item.deadline) {
         const dl = new Date(item.deadline);
         dl.setHours(9, 0, 0, 0);
@@ -383,6 +413,7 @@ export default function App() {
         }
       }
     }
+
     if (evList.length === 0) { alert('일정 날짜를 인식할 수 없어요'); return; }
     let chosen = evList;
     if (evList.length === 2) {
@@ -407,7 +438,7 @@ export default function App() {
   };
 
   const addAllEventsToCalendar = async () => {
-    const pendingEvents = events.filter(e => !e.completed && e.eventDate);
+    const pendingEvents = events.filter(e => !e.completed && e.startDate);
     if (pendingEvents.length === 0) {
       alert('캘린더에 추가할 일정이 없어요');
       return;
@@ -479,7 +510,7 @@ export default function App() {
     if (!dateStr) return null;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const m = String(dateStr).match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+    const m = String(dateStr).match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
     if (m) {
       const dl = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
       return Math.ceil((dl - today) / (1000 * 60 * 60 * 24));
@@ -507,14 +538,11 @@ export default function App() {
   }, [allNotices, region, search]);
 
   const filteredSites = useMemo(() => allSites.filter(s => region === '전체' || s.region === region), [allSites, region]);
-  const favoriteNotices = useMemo(() => allNotices.filter(n => favorites.has(n.id)), [allNotices, favorites]);
 
   const sortedEvents = useMemo(() => {
     return [...events].sort((a, b) => {
-      const ma = (a.eventDate || '').match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
-      const mb = (b.eventDate || '').match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
-      const da = ma ? new Date(parseInt(ma[1]), parseInt(ma[2]) - 1, parseInt(ma[3])) : new Date(0);
-      const db = mb ? new Date(parseInt(mb[1]), parseInt(mb[2]) - 1, parseInt(mb[3])) : new Date(0);
+      const da = a.startDate ? new Date(a.startDate) : new Date(0);
+      const db = b.startDate ? new Date(b.startDate) : new Date(0);
       return da - db;
     });
   }, [events]);
@@ -522,7 +550,8 @@ export default function App() {
   const upcomingEvents = useMemo(() => {
     return sortedEvents.filter(e => {
       if (e.completed) return false;
-      const d = daysUntil(e.eventDate);
+      const dateRef = e.endDate || e.startDate;
+      const d = daysUntil(dateRef);
       return d === null || d >= 0;
     });
   }, [sortedEvents]);
@@ -530,13 +559,14 @@ export default function App() {
   const pastEvents = useMemo(() => {
     return sortedEvents.filter(e => {
       if (e.completed) return true;
-      const d = daysUntil(e.eventDate);
+      const dateRef = e.endDate || e.startDate;
+      const d = daysUntil(dateRef);
       return d !== null && d < 0;
     }).reverse();
   }, [sortedEvents]);
 
   const nextEvent = upcomingEvents[0];
-  const nextEventDays = nextEvent ? daysUntil(nextEvent.eventDate) : null;
+  const nextEventDays = nextEvent ? daysUntil(nextEvent.startDate) : null;
 
   const stats = useMemo(() => {
     const now = new Date();
@@ -547,10 +577,9 @@ export default function App() {
     let totalRevenue = 0;
     const byRegion = {};
     for (const e of events) {
-      const m = (e.eventDate || '').match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
-      if (m) {
-        const y = parseInt(m[1]), mo = parseInt(m[2]) - 1;
-        if (y === thisYear && mo === thisMonth) {
+      if (e.startDate) {
+        const [y, mo] = e.startDate.split('-').map(Number);
+        if (y === thisYear && (mo - 1) === thisMonth) {
           thisMonthCount++;
           if (e.actualRevenue) {
             const rev = parseInt(String(e.actualRevenue).replace(/[^\d]/g, '')) || 0;
@@ -566,6 +595,13 @@ export default function App() {
     }
     return { thisMonthCount, thisMonthRevenue, totalRevenue, byRegion };
   }, [events]);
+
+  // 🆕 홈에서 일정 카드 누르면 일정 탭으로 이동하면서 해당 일정 펼치기
+  const goToEvent = (eventId) => {
+    setSelectedEventId(eventId);
+    setTab('events');
+    setEventTabFilter('upcoming');
+  };
 
   return (
     <div className="min-h-screen bg-stone-50 font-sans">
@@ -631,6 +667,7 @@ export default function App() {
               onTabChange={setTab}
               onOpenUrl={openUrl}
               onOpenMap={openNaverMap}
+              onGoToEvent={goToEvent}
             />
           )}
           {tab === 'notices' && (
@@ -659,6 +696,8 @@ export default function App() {
               onAddAllToCalendar={addAllEventsToCalendar}
               onOpenUrl={openUrl}
               onOpenMap={openNaverMap}
+              selectedEventId={selectedEventId}
+              onClearSelected={() => setSelectedEventId(null)}
             />
           )}
           {tab === 'sites' && (
@@ -726,7 +765,7 @@ export default function App() {
 }
 
 // ============ 홈 ============
-function HomeView({ urgentNotices, recentNotices, nextEvent, nextEventDays, upcomingCount, stats, notifyEnabled, daysUntil, onTabChange, onOpenUrl, onOpenMap }) {
+function HomeView({ urgentNotices, recentNotices, nextEvent, nextEventDays, upcomingCount, stats, notifyEnabled, daysUntil, onTabChange, onOpenUrl, onOpenMap, onGoToEvent }) {
   return (
     <div className="space-y-6">
       {nextEvent && (
@@ -734,7 +773,9 @@ function HomeView({ urgentNotices, recentNotices, nextEvent, nextEventDays, upco
           <h2 className="text-base font-black text-stone-900 mb-3 flex items-center gap-2">
             <span className="text-lg">🚚</span> 다음 행사
           </h2>
-          <div className="bg-gradient-to-br from-green-500 to-teal-600 text-white rounded-2xl p-4 shadow-lg">
+          {/* 🆕 카드 전체가 클릭 가능 → 일정 탭으로 이동 */}
+          <button onClick={() => onGoToEvent(nextEvent.id)}
+            className="w-full text-left bg-gradient-to-br from-green-500 to-teal-600 text-white rounded-2xl p-4 shadow-lg active:scale-[0.98] transition-transform">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-bold bg-white/20 px-2 py-0.5 rounded-full">{nextEvent.region}</span>
               {nextEventDays !== null && (
@@ -746,28 +787,28 @@ function HomeView({ urgentNotices, recentNotices, nextEvent, nextEventDays, upco
             <h3 className="text-base font-black leading-tight line-clamp-2 mb-2">{nextEvent.title}</h3>
             <div className="flex items-center gap-3 text-[11px] text-white/90 mb-3">
               <div className="flex items-center gap-1">
-                <Calendar className="w-3 h-3" />{nextEvent.eventDate || '날짜 미정'}
+                <Calendar className="w-3 h-3" />
+                {formatDateRange(nextEvent.startDate, nextEvent.endDate) || '날짜 미정'}
               </div>
-              {nextEvent.location && (
-                <div className="flex items-center gap-1 truncate">
-                  <MapPin className="w-3 h-3" />{nextEvent.location}
-                </div>
-              )}
             </div>
+            {nextEvent.location && (
+              <div className="flex items-center gap-1 text-[11px] text-white/90 mb-3 truncate">
+                <MapPin className="w-3 h-3 shrink-0" />{nextEvent.location}
+              </div>
+            )}
             <div className="flex gap-2">
               {nextEvent.location && (
-                <button onClick={(e) => { e.stopPropagation(); onOpenMap(nextEvent.location, 'route'); }}
+                <div onClick={(e) => { e.stopPropagation(); onOpenMap(nextEvent.location, 'route'); }}
                   className="flex-1 bg-white/20 active:bg-white/30 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-1.5">
                   <Navigation className="w-3.5 h-3.5" />
                   길찾기
-                </button>
+                </div>
               )}
-              <button onClick={() => onTabChange('events')}
-                className="flex-1 bg-white text-green-600 text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-1">
+              <div className="flex-1 bg-white text-green-600 text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-1">
                 자세히 <ChevronRight className="w-3 h-3" />
-              </button>
+              </div>
             </div>
-          </div>
+          </button>
         </section>
       )}
 
@@ -787,7 +828,7 @@ function HomeView({ urgentNotices, recentNotices, nextEvent, nextEventDays, upco
 
       <section className="grid grid-cols-3 gap-2">
         <StatCard label="이번달 행사" value={stats.thisMonthCount} icon="📅" />
-        <StatCard label="누적 행사" value={upcomingCount + (stats.thisMonthCount || 0)} icon="🚚" />
+        <StatCard label="예정 일정" value={upcomingCount} icon="🚚" />
         <StatCard label="이번달 수익" value={stats.thisMonthRevenue > 0 ? Math.round(stats.thisMonthRevenue / 10000) + '만' : '0'} icon="💰" />
       </section>
 
@@ -968,8 +1009,8 @@ function Detail({ label, value, icon }) {
   );
 }
 
-// ============ 내 일정 (메인 신규 기능) ============
-function EventsView({ upcomingEvents, pastEvents, filter, setFilter, daysUntil, onEdit, onDelete, onToggleChecklist, onAddChecklistItem, onRemoveChecklistItem, onUpdateRevenue, onAddToCalendar, onAddAllToCalendar, onOpenUrl, onOpenMap }) {
+// ============ 내 일정 ============
+function EventsView({ upcomingEvents, pastEvents, filter, setFilter, daysUntil, onEdit, onDelete, onToggleChecklist, onAddChecklistItem, onRemoveChecklistItem, onUpdateRevenue, onAddToCalendar, onAddAllToCalendar, onOpenUrl, onOpenMap, selectedEventId, onClearSelected }) {
   const list = filter === 'upcoming' ? upcomingEvents : pastEvents;
 
   return (
@@ -977,7 +1018,6 @@ function EventsView({ upcomingEvents, pastEvents, filter, setFilter, daysUntil, 
       <h2 className="text-base font-black text-stone-900 flex items-center gap-2">
         <CalendarCheck className="w-5 h-5 text-green-600" />내 행사 일정
       </h2>
-
       <div className="grid grid-cols-2 gap-2">
         <button onClick={() => setFilter('upcoming')}
           className={'py-2.5 rounded-xl text-sm font-bold ' + (filter === 'upcoming' ? 'bg-gradient-to-r from-green-500 to-teal-500 text-white shadow-md' : 'bg-stone-100 text-stone-600')}>
@@ -988,7 +1028,6 @@ function EventsView({ upcomingEvents, pastEvents, filter, setFilter, daysUntil, 
           종료 ({pastEvents.length})
         </button>
       </div>
-
       {filter === 'upcoming' && upcomingEvents.length > 0 && (
         <button onClick={onAddAllToCalendar}
           className="w-full bg-blue-50 border-2 border-blue-200 text-blue-700 font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-95 text-sm">
@@ -996,7 +1035,6 @@ function EventsView({ upcomingEvents, pastEvents, filter, setFilter, daysUntil, 
           예정된 일정 모두 캘린더에 추가
         </button>
       )}
-
       <div className="space-y-3">
         {list.length === 0 ? (
           <EmptyState
@@ -1005,7 +1043,9 @@ function EventsView({ upcomingEvents, pastEvents, filter, setFilter, daysUntil, 
           />
         ) : (
           list.map(e => (
-            <EventCard key={e.id} event={e} daysLeft={daysUntil(e.eventDate)}
+            <EventCard key={e.id} event={e} daysLeft={daysUntil(e.startDate)}
+              initialOpen={selectedEventId === e.id}
+              onOpened={() => onClearSelected()}
               onEdit={() => onEdit(e)} onDelete={() => onDelete(e.id)}
               onToggleChecklist={(itemId) => onToggleChecklist(e.id, itemId)}
               onAddChecklistItem={(text) => onAddChecklistItem(e.id, text)}
@@ -1021,16 +1061,23 @@ function EventsView({ upcomingEvents, pastEvents, filter, setFilter, daysUntil, 
   );
 }
 
-function EventCard({ event, daysLeft, onEdit, onDelete, onToggleChecklist, onAddChecklistItem, onRemoveChecklistItem, onUpdateRevenue, onAddToCalendar, onOpenUrl, onOpenMap }) {
-  const [open, setOpen] = useState(false);
+function EventCard({ event, daysLeft, initialOpen, onOpened, onEdit, onDelete, onToggleChecklist, onAddChecklistItem, onRemoveChecklistItem, onUpdateRevenue, onAddToCalendar, onOpenUrl, onOpenMap }) {
+  const [open, setOpen] = useState(!!initialOpen);
   const [newItem, setNewItem] = useState('');
   const [showRevenueInput, setShowRevenueInput] = useState(false);
-  const [revenueInput, setRevenueInput] = useState(event.actualRevenue || '');
+  const [revenueInput, setRevenueInput] = useState(parseMoney(event.actualRevenue));
   const isPast = daysLeft !== null && daysLeft < 0;
   const isUrgent = daysLeft !== null && daysLeft >= 0 && daysLeft <= 3;
   const checklist = event.checklist || [];
   const doneCount = checklist.filter(c => c.done).length;
   const completedClass = event.completed ? 'opacity-70' : '';
+
+  useEffect(() => {
+    if (initialOpen) {
+      setOpen(true);
+      onOpened && onOpened();
+    }
+  }, [initialOpen]);
 
   return (
     <div className={'border-2 rounded-2xl overflow-hidden ' + (event.completed ? 'bg-stone-50 border-stone-200 ' + completedClass : isPast ? 'bg-stone-50 border-stone-200 opacity-70' : isUrgent ? 'bg-gradient-to-br from-green-50 to-teal-50 border-green-300' : 'bg-white border-stone-200')}>
@@ -1054,9 +1101,9 @@ function EventCard({ event, daysLeft, onEdit, onDelete, onToggleChecklist, onAdd
               {event.fromNoticeId && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">공고출처</span>}
             </div>
             <h3 className="text-sm font-bold text-stone-900 leading-snug">{event.title}</h3>
-            {event.eventDate && (
+            {(event.startDate || event.endDate) && (
               <div className="flex items-center gap-1 mt-1.5 text-[11px] text-stone-600">
-                <Calendar className="w-3 h-3" />{event.eventDate}
+                <Calendar className="w-3 h-3" />{formatDateRange(event.startDate, event.endDate)}
               </div>
             )}
           </div>
@@ -1090,7 +1137,7 @@ function EventCard({ event, daysLeft, onEdit, onDelete, onToggleChecklist, onAdd
         {event.actualRevenue && (
           <div className="text-[11px] text-stone-600 mb-2 flex items-center gap-2">
             <span className="font-bold text-green-700">💰 실제 수익:</span>
-            <span className="font-black text-stone-900">{event.actualRevenue}</span>
+            <span className="font-black text-stone-900">{formatMoney(event.actualRevenue)}</span>
           </div>
         )}
 
@@ -1103,11 +1150,10 @@ function EventCard({ event, daysLeft, onEdit, onDelete, onToggleChecklist, onAdd
         {open && (
           <div className="mt-3 pt-3 border-t border-stone-100 space-y-3">
             {event.org && <Detail label="주관" value={event.org} />}
-            {event.fee && <Detail label="참가비" value={event.fee} />}
-            {event.expectedRevenue && <Detail label="예상수익" value={event.expectedRevenue} />}
+            {event.fee && <Detail label="참가비" value={formatMoney(event.fee) || event.fee} />}
+            {event.expectedRevenue && <Detail label="예상수익" value={formatMoney(event.expectedRevenue) || event.expectedRevenue} />}
             {event.memo && <p className="text-[11px] text-stone-600 leading-relaxed bg-stone-50 p-2.5 rounded-lg">{event.memo}</p>}
 
-            {/* 체크리스트 */}
             <div>
               <div className="text-xs font-black text-stone-700 mb-2 flex items-center gap-1">
                 <CheckSquare className="w-4 h-4" />
@@ -1115,12 +1161,12 @@ function EventCard({ event, daysLeft, onEdit, onDelete, onToggleChecklist, onAdd
               </div>
               <div className="space-y-1.5">
                 {checklist.map(c => (
-                  <div key={c.id} className="flex items-center gap-2 group">
+                  <div key={c.id} className="flex items-center gap-2">
                     <button onClick={() => onToggleChecklist(c.id)} className="active:scale-95">
                       {c.done ? <CheckSquare className="w-5 h-5 text-green-600" /> : <Square className="w-5 h-5 text-stone-400" />}
                     </button>
                     <span className={'flex-1 text-sm ' + (c.done ? 'line-through text-stone-400' : 'text-stone-700')}>{c.text}</span>
-                    <button onClick={() => onRemoveChecklistItem(c.id)} className="text-red-400 active:scale-95 opacity-0 group-hover:opacity-100">
+                    <button onClick={() => onRemoveChecklistItem(c.id)} className="text-red-400 active:scale-95 p-1">
                       <X className="w-4 h-4" />
                     </button>
                   </div>
@@ -1136,17 +1182,31 @@ function EventCard({ event, daysLeft, onEdit, onDelete, onToggleChecklist, onAdd
               </div>
             </div>
 
-            {/* 수익 입력 */}
             {(isPast || event.completed) && (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
                 <div className="text-xs font-black text-amber-900 mb-2">💰 실제 수익 기록</div>
                 {showRevenueInput || !event.actualRevenue ? (
-                  <div className="flex gap-2">
-                    <input type="text" value={revenueInput} onChange={(e) => setRevenueInput(e.target.value)}
-                      placeholder="예: 850000 또는 85만원"
-                      className="flex-1 px-3 py-2 bg-white border border-amber-300 rounded-lg text-sm focus:outline-none" />
+                  <div className="space-y-2">
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="tel"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={revenueInput}
+                        onChange={(e) => setRevenueInput(e.target.value.replace(/[^\d]/g, ''))}
+                        placeholder="예: 850000"
+                        className="flex-1 px-3 py-2.5 bg-white border-2 border-amber-300 rounded-lg text-base font-bold focus:outline-none focus:border-amber-500" />
+                      <span className="text-sm font-bold text-amber-900">원</span>
+                    </div>
+                    {revenueInput && (
+                      <div className="text-xs text-amber-700 font-medium">
+                        = {parseInt(revenueInput).toLocaleString()}원
+                      </div>
+                    )}
                     <button onClick={() => { onUpdateRevenue(revenueInput); setShowRevenueInput(false); }}
-                      className="bg-amber-500 text-white px-4 rounded-lg text-xs font-bold active:scale-95">저장</button>
+                      className="w-full bg-amber-500 text-white py-2 rounded-lg text-xs font-bold active:scale-95">
+                      저장
+                    </button>
                   </div>
                 ) : (
                   <button onClick={() => setShowRevenueInput(true)}
@@ -1157,9 +1217,8 @@ function EventCard({ event, daysLeft, onEdit, onDelete, onToggleChecklist, onAdd
               </div>
             )}
 
-            {/* 액션 버튼 */}
             <div className="flex gap-2 pt-1">
-              {event.eventDate && (
+              {event.startDate && (
                 <button onClick={onAddToCalendar} className="bg-blue-50 text-blue-600 px-3 py-2.5 rounded-xl active:scale-95 flex items-center justify-center" title="캘린더에 추가">
                   <Calendar className="w-4 h-4" />
                 </button>
@@ -1248,8 +1307,6 @@ function SettingsView({ settings, onChange, noticeCount, favoriteCount, eventCou
   return (
     <div className="space-y-5">
       <h2 className="text-base font-black text-stone-900">설정</h2>
-
-      {/* 비즈니스 통계 */}
       <section className="bg-gradient-to-br from-purple-500 to-pink-500 text-white rounded-2xl p-5 shadow-lg">
         <h3 className="text-sm font-black mb-3 flex items-center gap-2">
           <TrendingUp className="w-4 h-4" />
@@ -1323,7 +1380,7 @@ function SettingsView({ settings, onChange, noticeCount, favoriteCount, eventCou
               </div>
               <div className="text-left">
                 <div className="text-sm font-bold text-stone-900">지역 관리</div>
-                <div className="text-[11px] text-stone-500">전국 검색 / 추가한 지역 {customRegions.length}개</div>
+                <div className="text-[11px] text-stone-500">전국 검색 / 추가 {customRegions.length}개</div>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-stone-400" />
@@ -1362,18 +1419,8 @@ function SettingsView({ settings, onChange, noticeCount, favoriteCount, eventCou
         </div>
       </section>
 
-      <section className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-4">
-        <h3 className="text-xs font-black text-amber-900 mb-2">📱 앱 사용 안내</h3>
-        <ul className="text-[11px] text-amber-900 space-y-1.5 leading-relaxed font-medium">
-          <li>• 공고 → [확정] 누르면 자동으로 일정에 추가</li>
-          <li>• 일정에서 📍 → 지도/길찾기 (네이버 지도 연동)</li>
-          <li>• 행사 끝나면 실제 수익 기록 → 통계에 반영</li>
-          <li>• 모든 데이터는 본인 기기에만 저장됩니다</li>
-        </ul>
-      </section>
-
       <p className="text-center text-[10px] text-stone-400 font-medium pt-2">
-        푸드트럭 알리미 v1.3.0
+        푸드트럭 알리미 v1.3.1
       </p>
     </div>
   );
@@ -1436,7 +1483,7 @@ function NoticeForm({ initial, onSave, onClose, regions }) {
             <input type="date" value={form.deadline} onChange={(e) => update('deadline', e.target.value)}
               className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
           </Field>
-          <Field label="행사 일시">
+          <Field label="행사 일시 (메모)">
             <input type="text" value={form.eventDate} onChange={(e) => update('eventDate', e.target.value)} placeholder="예: 2026-09-25 ~ 2026-10-04"
               className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
           </Field>
@@ -1466,16 +1513,22 @@ function NoticeForm({ initial, onSave, onClose, regions }) {
   );
 }
 
-// ============ 일정 폼 ============
+// ============ 일정 폼 (대대적 개편) ============
 function EventForm({ initial, onSave, onClose, regions, onOpenMap }) {
   const [form, setForm] = useState(initial || {
-    region: regions[0] || '논산', title: '', org: '', eventDate: '', location: '',
-    fee: '', expectedRevenue: '', actualRevenue: '', memo: '', url: '',
+    region: regions[0] || '논산', title: '', org: '',
+    startDate: '', endDate: '',  // 🆕 시작/종료일 분리
+    location: '', fee: '', expectedRevenue: '', actualRevenue: '', memo: '', url: '',
     checklist: DEFAULT_CHECKLIST.map(c => ({ ...c })), completed: false,
   });
   const update = (key, value) => setForm(f => ({ ...f, [key]: value }));
+
   const handleSubmit = () => {
     if (!form.title) { alert('행사 제목은 필수입니다'); return; }
+    if (!form.startDate) { alert('시작일은 필수입니다 (캘린더 추가에 필요)'); return; }
+    if (form.endDate && form.endDate < form.startDate) {
+      alert('종료일은 시작일 이후여야 합니다'); return;
+    }
     onSave(form);
   };
 
@@ -1500,56 +1553,107 @@ function EventForm({ initial, onSave, onClose, regions, onOpenMap }) {
               ))}
             </div>
           </Field>
+
           <Field label="행사 제목 *">
             <input type="text" value={form.title} onChange={(e) => update('title', e.target.value)}
               placeholder="예: 부여 서동연꽃축제"
               className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
           </Field>
+
           <Field label="주관">
             <input type="text" value={form.org} onChange={(e) => update('org', e.target.value)} placeholder="예: 부여군청"
               className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
           </Field>
-          <Field label="행사 일시">
-            <input type="text" value={form.eventDate} onChange={(e) => update('eventDate', e.target.value)} placeholder="예: 2026-07-15 (D-Day 표시용)"
-              className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
-          </Field>
+
+          {/* 🆕 시작일 / 종료일 분리 (날짜 선택기) */}
+          <div className="bg-green-50 border-2 border-green-200 rounded-xl p-3 space-y-3">
+            <div className="text-xs font-black text-green-900 flex items-center gap-1">
+              <Calendar className="w-4 h-4" />
+              행사 날짜 (탭해서 선택)
+            </div>
+            <Field label="📅 시작일 *">
+              <input type="date" value={form.startDate} onChange={(e) => update('startDate', e.target.value)}
+                className="w-full px-4 py-3 bg-white rounded-xl text-base font-bold focus:outline-none border-2 border-green-300 focus:border-green-500" />
+            </Field>
+            <Field label="📅 종료일 (당일 행사면 비워두기)">
+              <input type="date" value={form.endDate} onChange={(e) => update('endDate', e.target.value)}
+                min={form.startDate}
+                className="w-full px-4 py-3 bg-white rounded-xl text-base font-bold focus:outline-none border-2 border-green-300 focus:border-green-500" />
+            </Field>
+            {form.startDate && (
+              <p className="text-[11px] text-green-700 font-bold bg-white rounded-lg p-2">
+                ✓ {formatDateRange(form.startDate, form.endDate)}
+              </p>
+            )}
+          </div>
+
           <Field label="📍 장소">
             <div className="space-y-2">
               <input type="text" value={form.location} onChange={(e) => update('location', e.target.value)} placeholder="예: 부여 궁남지"
                 className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
               {form.location && (
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => onOpenMap(form.location, 'search')}
-                    className="flex-1 bg-green-100 text-green-700 font-bold text-xs py-2 rounded-lg active:scale-95 flex items-center justify-center gap-1">
-                    <Map className="w-3.5 h-3.5" />네이버 지도에서 확인
-                  </button>
-                </div>
+                <button type="button" onClick={() => onOpenMap(form.location, 'search')}
+                  className="w-full bg-green-100 text-green-700 font-bold text-xs py-2 rounded-lg active:scale-95 flex items-center justify-center gap-1">
+                  <Map className="w-3.5 h-3.5" />네이버 지도에서 확인
+                </button>
               )}
-              <p className="text-[10px] text-stone-500">💡 장소 입력 후 일정 카드에서 길찾기 버튼이 활성화돼요</p>
             </div>
           </Field>
-          <Field label="참가비">
-            <input type="text" value={form.fee} onChange={(e) => update('fee', e.target.value)} placeholder="예: 30만원"
-              className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
+
+          {/* 🆕 금액 입력 - 숫자 키패드 + 자동 포맷팅 */}
+          <Field label="💵 참가비">
+            <MoneyInput value={form.fee} onChange={(v) => update('fee', v)} placeholder="예: 300000" />
           </Field>
+
           <Field label="💰 예상 수익">
-            <input type="text" value={form.expectedRevenue} onChange={(e) => update('expectedRevenue', e.target.value)} placeholder="예: 100만원"
-              className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
+            <MoneyInput value={form.expectedRevenue} onChange={(v) => update('expectedRevenue', v)} placeholder="예: 1000000" />
           </Field>
+
           <Field label="공고 URL">
             <input type="url" value={form.url} onChange={(e) => update('url', e.target.value)} placeholder="https://..."
               className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
           </Field>
+
           <Field label="메모">
             <textarea value={form.memo} onChange={(e) => update('memo', e.target.value)} rows={3} placeholder="특이사항, 메뉴 계획 등"
               className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200 resize-none" />
           </Field>
+
           <button onClick={handleSubmit}
             className="w-full bg-gradient-to-r from-green-500 to-teal-500 text-white font-black py-3.5 rounded-2xl text-sm shadow-lg active:scale-95">
             {initial ? '수정 완료' : '일정 등록'}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// 🆕 금액 입력 컴포넌트 (숫자 키패드 + 천단위 콤마 표시)
+function MoneyInput({ value, onChange, placeholder }) {
+  const [focused, setFocused] = useState(false);
+  const numericValue = parseMoney(value);
+
+  return (
+    <div>
+      <div className="flex gap-2 items-center">
+        <input
+          type="tel"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={numericValue}
+          onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, ''))}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          placeholder={placeholder}
+          className="flex-1 px-4 py-3 bg-stone-100 rounded-xl text-base font-bold focus:outline-none focus:bg-stone-200" />
+        <span className="text-sm font-bold text-stone-700 shrink-0">원</span>
+      </div>
+      {numericValue && (
+        <div className="text-xs text-green-700 font-bold mt-1 px-1">
+          = {parseInt(numericValue).toLocaleString()}원
+        </div>
+      )}
     </div>
   );
 }
