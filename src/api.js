@@ -2,7 +2,7 @@
 import { Preferences } from '@capacitor/preferences';
 import { Network } from '@capacitor/network';
 
-export const API_BASE = 'https://your-server.com';
+export const API_BASE = 'https://piesta-server.onrender.com';
 
 export async function fetchNotices({ region, search } = {}) {
   const params = new URLSearchParams();
