@@ -562,6 +562,9 @@ export default function App() {
 
   const urgentNotices = useMemo(() => {
     return allNotices.filter(n => {
+      // 자동 수집 공고는 마감일이 부정확하므로 제외 (직접 등록한 공고만)
+      const isManual = n.id && n.id.startsWith('m_');
+      if (!isManual) return false;
       const d = daysUntil(n.deadline);
       return d !== null && d >= 0 && d <= settings.notifyDays;
     });
@@ -897,8 +900,8 @@ function HomeView({ urgentNotices, recentNotices, nextEvent, nextEventDays, upco
                 </div>
                 <h3 className="text-sm font-bold text-stone-900 leading-snug line-clamp-2">{n.title}</h3>
                 {n.deadline && (
-                  <div className="flex items-center gap-1 mt-2 text-[11px] text-stone-600">
-                    <Calendar className="w-3 h-3" />~{n.deadline}
+                  <div className="flex items-center gap-1 mt-2 text-[11px] text-stone-500">
+                    <Calendar className="w-3 h-3" />등록일: {n.deadline}
                   </div>
                 )}
               </button>
@@ -986,31 +989,47 @@ function NoticesView({ notices, search, setSearch, favorites, onToggleFavorite, 
 
 function NoticeCard({ notice, isFavorite, isInEvents, onToggleFavorite, daysLeft, onEdit, onDelete, onOpenUrl, onAddToCalendar, onConfirmAttendance, expandable }) {
   const [open, setOpen] = useState(false);
-  const isUrgent = daysLeft !== null && daysLeft >= 0 && daysLeft <= 3;
-  const isPast = daysLeft !== null && daysLeft < 0;
+  const isManual = notice.id && notice.id.startsWith('m_');  // 직접 등록한 공고
+  const isUrgent = isManual && daysLeft !== null && daysLeft >= 0 && daysLeft <= 3;
+  const isPast = isManual && daysLeft !== null && daysLeft < 0;
 
   return (
     <div className={'border-2 rounded-2xl overflow-hidden ' + (isPast ? 'bg-stone-50 border-stone-200 opacity-60' : isUrgent ? 'bg-white border-red-300' : 'bg-white border-stone-200')}>
       <div className="p-3.5">
         <div className="flex items-start gap-2.5">
-          {daysLeft !== null && (
+          {/* 직접 등록 공고만 D-Day 박스 표시 (자동 수집은 마감일이 부정확함) */}
+          {isManual && daysLeft !== null && (
             <div className={'text-center rounded-xl px-2 py-1.5 min-w-[56px] ' + (isPast ? 'bg-stone-200 text-stone-500' : isUrgent ? 'bg-red-500 text-white' : daysLeft <= 7 ? 'bg-orange-500 text-white' : 'bg-stone-100 text-stone-700')}>
               <div className="text-[9px] font-bold opacity-80">{isPast ? '마감' : 'D-DAY'}</div>
               <div className="text-base font-black leading-none mt-0.5">{isPast ? '종료' : daysLeft === 0 ? 'D-0' : 'D-' + daysLeft}</div>
             </div>
           )}
+          {/* 자동 수집 공고는 등록일 배지 */}
+          {!isManual && notice.deadline && (
+            <div className="text-center rounded-xl px-2 py-1.5 min-w-[56px] bg-blue-50 text-blue-700">
+              <div className="text-[9px] font-bold opacity-90">등록일</div>
+              <div className="text-[11px] font-black leading-tight mt-0.5">{notice.deadline.slice(5).replace('-', '/')}</div>
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
               <span className="text-[10px] font-black text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">{notice.region}</span>
-              {notice.id && notice.id.startsWith('m_') && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">직접등록</span>}
+              {isManual && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">직접등록</span>}
               {notice.isNew && <span className="text-[10px] font-black text-white bg-red-500 px-1.5 py-0.5 rounded">NEW</span>}
               {isInEvents && <span className="text-[10px] font-black text-white bg-green-500 px-1.5 py-0.5 rounded">참가확정</span>}
               <span className="text-[10px] text-stone-500 font-medium truncate">{notice.org}</span>
             </div>
             <h3 className="text-sm font-bold text-stone-900 leading-snug line-clamp-2">{notice.title}</h3>
+            {/* 직접 등록 공고: 마감일 / 자동 수집: 등록일 */}
             {notice.deadline && (
-              <div className="flex items-center gap-1 mt-2 text-[11px] text-stone-600">
-                <Calendar className="w-3 h-3" />~{notice.deadline}
+              <div className="flex items-center gap-1 mt-2 text-[11px] text-stone-500">
+                <Calendar className="w-3 h-3" />
+                {isManual ? '마감: ' + notice.deadline : '등록일: ' + notice.deadline}
+              </div>
+            )}
+            {!isManual && (
+              <div className="text-[10px] text-stone-400 mt-1 italic">
+                💡 정확한 마감일은 공고를 열어 확인하세요
               </div>
             )}
           </div>
