@@ -15,22 +15,44 @@ import { notifyNewNotices, scheduleDeadlineReminders, listenNotificationClick, e
 import { searchRegions, generateSitesFromRegion } from './regionsDB';
 
 const DEFAULT_SITES = [
+  // 충남권
   { region: '논산', name: '논산시청', url: 'https://www.nonsan.go.kr/', type: '관공서' },
-  { region: '논산', name: '논산문화관광재단', url: 'https://www.nscf.or.kr/', type: '문화관광' },
+  { region: '논산', name: '논산 문화관광', url: 'https://www.nonsan.go.kr/tour/', type: '문화관광' },
+  { region: '논산', name: '논산문화관광재단', url: 'https://www.nonsan.go.kr/cntf/', type: '문화관광' },
+
   { region: '부여', name: '부여군청', url: 'https://www.buyeo.go.kr/html/kr/', type: '관공서' },
-  { region: '부여', name: '부여문화관광재단', url: 'https://www.buyeoctf.or.kr/', type: '문화관광' },
+  { region: '부여', name: '부여 문화관광', url: 'https://www.buyeo.go.kr/html/tour/', type: '문화관광' },
+
   { region: '공주', name: '공주시청', url: 'https://www.gongju.go.kr/kr/', type: '관공서' },
-  { region: '공주', name: '공주문화관광재단', url: 'https://www.gjcf.or.kr/', type: '문화관광' },
+  { region: '공주', name: '공주 문화관광', url: 'https://www.gongju.go.kr/tour/', type: '문화관광' },
+  { region: '공주', name: '공주문화관광재단', url: 'https://www.gongjucf.or.kr/', type: '문화관광' },
+
   { region: '서천', name: '서천군청', url: 'https://www.seocheon.go.kr/kor.do', type: '관공서' },
+  { region: '서천', name: '서천 문화관광', url: 'https://www.seocheon.go.kr/tour.do', type: '문화관광' },
+  { region: '서천', name: '서천문화관광재단', url: 'https://www.seocheonctf.or.kr/', type: '문화관광' },
+
   { region: '보령', name: '보령시청', url: 'https://www.brcn.go.kr/kor.do', type: '관공서' },
+  { region: '보령', name: '보령 문화관광', url: 'https://www.brcn.go.kr/tour.do', type: '문화관광' },
+
   { region: '청양', name: '청양군청', url: 'https://www.cheongyang.go.kr/kr.do', type: '관공서' },
+  { region: '청양', name: '청양 문화관광', url: 'https://tour.cheongyang.go.kr/', type: '문화관광' },
+
+  // 전북권
   { region: '익산', name: '익산시청', url: 'https://www.iksan.go.kr/', type: '관공서' },
-  { region: '익산', name: '익산문화관광재단', url: 'https://www.iksancf.com/', type: '문화관광' },
+  { region: '익산', name: '익산 문화관광', url: 'https://www.iksan.go.kr/tour', type: '문화관광' },
+  { region: '익산', name: '익산문화관광재단', url: 'https://www.ictf.or.kr/', type: '문화관광' },
+
   { region: '군산', name: '군산시청', url: 'https://www.gunsan.go.kr/', type: '관공서' },
+  { region: '군산', name: '군산 문화관광', url: 'https://www.gunsan.go.kr/tour', type: '문화관광' },
+
   { region: '김제', name: '김제시청', url: 'https://www.gimje.go.kr/', type: '관공서' },
+  { region: '김제', name: '김제 문화관광', url: 'https://www.gimje.go.kr/tour/', type: '문화관광' },
+
   { region: '전주', name: '전주시청', url: 'https://www.jeonju.go.kr/', type: '관공서' },
   { region: '전주', name: '전주문화재단', url: 'https://www.jjcf.or.kr/', type: '문화관광' },
+
   { region: '완주', name: '완주군청', url: 'https://www.wanju.go.kr/', type: '관공서' },
+  { region: '완주', name: '완주 문화관광', url: 'https://www.wanju.go.kr/tour/index.wanju', type: '문화관광' },
 ];
 
 const DEFAULT_REGIONS = ['논산', '부여', '공주', '서천', '보령', '청양', '익산', '군산', '김제', '전주', '완주'];
@@ -421,6 +443,23 @@ export default function App() {
       chosen = choice ? evList : [evList[0]];
     }
     for (const ev of chosen) {
+      // 안드로이드 표준 캘린더 인텐트 - 설치된 모든 캘린더 앱이 선택지로 뜸
+      // (삼성 캘린더 / 구글 캘린더 / 네이버 캘린더 등)
+      const beginMs = ev.start.getTime();
+      const endMs = ev.end.getTime();
+
+      // intent:// URL - 안드로이드가 알아서 캘린더 앱 선택 팝업을 띄움
+      const intentUrl = 'intent:#Intent;' +
+        'action=android.intent.action.INSERT;' +
+        'type=vnd.android.cursor.item/event;' +
+        'S.title=' + encodeURIComponent(ev.title) + ';' +
+        'S.description=' + encodeURIComponent(ev.details) + ';' +
+        'S.eventLocation=' + encodeURIComponent(ev.location || '') + ';' +
+        'l.beginTime=' + beginMs + ';' +
+        'l.endTime=' + endMs + ';' +
+        'end';
+
+      // 웹 fallback (안드로이드 아닌 경우 또는 캘린더 앱 없는 경우)
       const fmt = (d) => {
         const pad = (n) => String(n).padStart(2, '0');
         return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00';
@@ -430,10 +469,25 @@ export default function App() {
         dates: fmt(ev.start) + '/' + fmt(ev.end),
         details: ev.details, location: ev.location,
       });
-      const calendarUrl = 'https://calendar.google.com/calendar/render?' + params.toString();
-      try { await Browser.open({ url: calendarUrl }); }
-      catch { window.open(calendarUrl, '_blank'); }
-      if (chosen.length > 1) await new Promise(r => setTimeout(r, 800));
+      const webFallback = 'https://calendar.google.com/calendar/render?' + params.toString();
+
+      try {
+        // 안드로이드 캘린더 선택 팝업 시도
+        const startTime = Date.now();
+        window.location.href = intentUrl;
+
+        // 1.5초 안에 앱이 열리지 않으면 웹 캘린더로 fallback
+        setTimeout(() => {
+          if (Date.now() - startTime < 2000 && !document.hidden) {
+            try { Browser.open({ url: webFallback }); }
+            catch { window.open(webFallback, '_blank'); }
+          }
+        }, 1500);
+      } catch {
+        try { await Browser.open({ url: webFallback }); }
+        catch { window.open(webFallback, '_blank'); }
+      }
+      if (chosen.length > 1) await new Promise(r => setTimeout(r, 1500));
     }
   };
 
@@ -827,9 +881,12 @@ function HomeView({ urgentNotices, recentNotices, nextEvent, nextEventDays, upco
       )}
 
       <section className="grid grid-cols-3 gap-2">
-        <StatCard label="이번달 행사" value={stats.thisMonthCount} icon="📅" />
-        <StatCard label="예정 일정" value={upcomingCount} icon="🚚" />
-        <StatCard label="이번달 수익" value={stats.thisMonthRevenue > 0 ? Math.round(stats.thisMonthRevenue / 10000) + '만' : '0'} icon="💰" />
+        <StatCard label="이번달 행사" value={stats.thisMonthCount} icon="📅"
+          onClick={() => onTabChange('events')} />
+        <StatCard label="예정 일정" value={upcomingCount} icon="🚚"
+          onClick={() => onTabChange('events')} />
+        <StatCard label="이번달 수익" value={stats.thisMonthRevenue > 0 ? Math.round(stats.thisMonthRevenue / 10000) + '만' : '0'} icon="💰"
+          onClick={() => onTabChange('settings')} />
       </section>
 
       <section>
@@ -884,7 +941,17 @@ function UrgentCard({ notice, daysLeft, onOpenUrl }) {
   );
 }
 
-function StatCard({ label, value, icon }) {
+function StatCard({ label, value, icon, onClick }) {
+  if (onClick) {
+    return (
+      <button onClick={onClick}
+        className="bg-stone-50 border border-stone-200 rounded-2xl p-3 text-center active:scale-95 active:bg-stone-100 transition-all">
+        <div className="text-2xl mb-1">{icon}</div>
+        <div className="text-xl font-black text-stone-900">{value}</div>
+        <div className="text-[10px] font-medium text-stone-500 mt-0.5">{label}</div>
+      </button>
+    );
+  }
   return (
     <div className="bg-stone-50 border border-stone-200 rounded-2xl p-3 text-center">
       <div className="text-2xl mb-1">{icon}</div>
