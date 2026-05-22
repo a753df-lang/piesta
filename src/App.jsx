@@ -443,23 +443,10 @@ export default function App() {
       chosen = choice ? evList : [evList[0]];
     }
     for (const ev of chosen) {
-      // 안드로이드 표준 캘린더 인텐트 - 설치된 모든 캘린더 앱이 선택지로 뜸
-      // (삼성 캘린더 / 구글 캘린더 / 네이버 캘린더 등)
       const beginMs = ev.start.getTime();
       const endMs = ev.end.getTime();
 
-      // intent:// URL - 안드로이드가 알아서 캘린더 앱 선택 팝업을 띄움
-      const intentUrl = 'intent:#Intent;' +
-        'action=android.intent.action.INSERT;' +
-        'type=vnd.android.cursor.item/event;' +
-        'S.title=' + encodeURIComponent(ev.title) + ';' +
-        'S.description=' + encodeURIComponent(ev.details) + ';' +
-        'S.eventLocation=' + encodeURIComponent(ev.location || '') + ';' +
-        'l.beginTime=' + beginMs + ';' +
-        'l.endTime=' + endMs + ';' +
-        'end';
-
-      // 웹 fallback (안드로이드 아닌 경우 또는 캘린더 앱 없는 경우)
+      // 웹 fallback URL (네이티브 플러그인 실패 시)
       const fmt = (d) => {
         const pad = (n) => String(n).padStart(2, '0');
         return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00';
@@ -472,18 +459,19 @@ export default function App() {
       const webFallback = 'https://calendar.google.com/calendar/render?' + params.toString();
 
       try {
-        // 안드로이드 캘린더 선택 팝업 시도
-        const startTime = Date.now();
-        window.location.href = intentUrl;
-
-        // 1.5초 안에 앱이 열리지 않으면 웹 캘린더로 fallback
-        setTimeout(() => {
-          if (Date.now() - startTime < 2000 && !document.hidden) {
-            try { Browser.open({ url: webFallback }); }
-            catch { window.open(webFallback, '_blank'); }
-          }
-        }, 1500);
-      } catch {
+        // 안드로이드 네이티브 플러그인 호출 - 캘린더 앱 선택 팝업 강제 표시
+        const { registerPlugin } = await import('@capacitor/core');
+        const CalendarIntent = registerPlugin('CalendarIntent');
+        await CalendarIntent.addEvent({
+          title: ev.title,
+          description: ev.details,
+          location: ev.location || '',
+          beginTime: beginMs,
+          endTime: endMs,
+        });
+      } catch (err) {
+        console.warn('네이티브 캘린더 실패, 웹으로 fallback:', err);
+        // 네이티브 플러그인 실패 시 웹 구글 캘린더로 fallback
         try { await Browser.open({ url: webFallback }); }
         catch { window.open(webFallback, '_blank'); }
       }
