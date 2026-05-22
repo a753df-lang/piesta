@@ -56,6 +56,94 @@ jobs:
             sed -i 's|<application|<application\n        android:usesCleartextTraffic="true"|' "$MANIFEST"
           fi
 
+      # ============ 캘린더 인텐트 네이티브 플러그인 자동 생성 ============
+      - name: Create Calendar Intent Plugin
+        run: |
+          PLUGIN_DIR="android/app/src/main/java/com/foodtruck/alarm"
+          mkdir -p "$PLUGIN_DIR"
+
+          # CalendarPlugin.java - 캘린더 선택 팝업을 띄우는 네이티브 코드
+          cat > "$PLUGIN_DIR/CalendarPlugin.java" << 'EOF'
+          package com.foodtruck.alarm;
+
+          import android.content.Intent;
+          import android.provider.CalendarContract;
+          import com.getcapacitor.JSObject;
+          import com.getcapacitor.Plugin;
+          import com.getcapacitor.PluginCall;
+          import com.getcapacitor.PluginMethod;
+          import com.getcapacitor.annotation.CapacitorPlugin;
+
+          @CapacitorPlugin(name = "CalendarIntent")
+          public class CalendarPlugin extends Plugin {
+
+              @PluginMethod
+              public void addEvent(PluginCall call) {
+                  try {
+                      String title = call.getString("title", "");
+                      String description = call.getString("description", "");
+                      String location = call.getString("location", "");
+                      Long beginTime = call.getLong("beginTime", 0L);
+                      Long endTime = call.getLong("endTime", 0L);
+
+                      Intent intent = new Intent(Intent.ACTION_INSERT);
+                      intent.setData(CalendarContract.Events.CONTENT_URI);
+                      intent.putExtra(CalendarContract.Events.TITLE, title);
+                      intent.putExtra(CalendarContract.Events.DESCRIPTION, description);
+                      intent.putExtra(CalendarContract.Events.EVENT_LOCATION, location);
+                      intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, beginTime);
+                      intent.putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endTime);
+                      intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+                      // 캘린더 앱 선택 팝업 강제 표시
+                      Intent chooser = Intent.createChooser(intent, "캘린더 선택");
+                      chooser.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+                      getContext().startActivity(chooser);
+
+                      JSObject ret = new JSObject();
+                      ret.put("success", true);
+                      call.resolve(ret);
+                  } catch (Exception e) {
+                      call.reject("캘린더 열기 실패: " + e.getMessage());
+                  }
+              }
+          }
+          EOF
+
+          echo "✅ CalendarPlugin.java 생성됨"
+
+          # MainActivity.java에 플러그인 등록
+          MAIN_ACTIVITY="$PLUGIN_DIR/MainActivity.java"
+          if [ -f "$MAIN_ACTIVITY" ]; then
+            echo "📝 기존 MainActivity.java:"
+            cat "$MAIN_ACTIVITY"
+
+            # registerPlugin 호출 추가 (이미 있으면 스킵)
+            if ! grep -q "CalendarPlugin.class" "$MAIN_ACTIVITY"; then
+              # Capacitor 5+ 방식: onCreate 안에 registerPlugin 추가
+              if grep -q "extends BridgeActivity" "$MAIN_ACTIVITY"; then
+                # import 추가
+                sed -i 's|import com.getcapacitor.BridgeActivity;|import com.getcapacitor.BridgeActivity;\nimport android.os.Bundle;|' "$MAIN_ACTIVITY"
+
+                # 클래스 안에 onCreate 추가 (없으면)
+                if ! grep -q "onCreate" "$MAIN_ACTIVITY"; then
+                  sed -i 's|public class MainActivity extends BridgeActivity {|public class MainActivity extends BridgeActivity {\n    @Override\n    public void onCreate(Bundle savedInstanceState) {\n        registerPlugin(CalendarPlugin.class);\n        super.onCreate(savedInstanceState);\n    }|' "$MAIN_ACTIVITY"
+                else
+                  # 이미 onCreate가 있으면 super.onCreate 앞에 registerPlugin 추가
+                  sed -i 's|super.onCreate(savedInstanceState);|registerPlugin(CalendarPlugin.class);\n        super.onCreate(savedInstanceState);|' "$MAIN_ACTIVITY"
+                fi
+              fi
+            fi
+
+            echo ""
+            echo "📝 수정된 MainActivity.java:"
+            cat "$MAIN_ACTIVITY"
+          else
+            echo "❌ MainActivity.java를 찾을 수 없음"
+            find android -name "MainActivity.java"
+          fi
+
       - name: Update app name to Korean
         run: |
           cat > android/app/src/main/res/values/strings.xml << 'EOF'
@@ -68,18 +156,6 @@ jobs:
           </resources>
           EOF
 
-      # ============ 디버그: 기존 색상 리소스 확인 ============
-      - name: Debug existing color resources
-        run: |
-          echo "=== 모든 colors.xml / ic_launcher_background 파일 찾기 ==="
-          find android/app/src/main/res -type f \( -name "colors.xml" -o -name "ic_launcher_background*" \) | while read f; do
-            echo ""
-            echo "📄 $f"
-            cat "$f"
-            echo ""
-          done
-
-      # ============ 푸드트럭 아이콘 자동 생성 ============
       - name: Generate app icons from SVG
         run: |
           if [ ! -f "foodtruck-icon.svg" ]; then
@@ -87,24 +163,17 @@ jobs:
             exit 0
           fi
 
-          echo "🚚 푸드트럭 아이콘 생성 시작..."
-
-          # 안드로이드 아이콘 크기별로 PNG 변환
           for entry in "mdpi:48" "hdpi:72" "xhdpi:96" "xxhdpi:144" "xxxhdpi:192"; do
             density="${entry%:*}"
             size="${entry#*:}"
             target_dir="android/app/src/main/res/mipmap-${density}"
             mkdir -p "$target_dir"
-
             rsvg-convert -w "$size" -h "$size" foodtruck-icon.svg -o "$target_dir/ic_launcher.png"
             cp "$target_dir/ic_launcher.png" "$target_dir/ic_launcher_round.png"
             fg_size=$((size * 108 / 48))
             rsvg-convert -w "$fg_size" -h "$fg_size" foodtruck-icon.svg -o "$target_dir/ic_launcher_foreground.png"
-
-            echo "  ✅ $density (${size}x${size})"
           done
 
-          # 적응형 아이콘 XML
           mkdir -p android/app/src/main/res/mipmap-anydpi-v26
           cat > android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -116,38 +185,20 @@ jobs:
           cp android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml \
              android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 
-          # ============ 색상 리소스 충돌 완전 해결 ============
-          echo ""
-          echo "🎨 색상 리소스 처리 시작..."
-          
-          # 1단계: 모든 ic_launcher_background 정의를 모든 파일에서 제거
-          echo "  1️⃣  모든 ic_launcher_background 정의 제거 중..."
+          # 색상 리소스 중복 방지
           find android/app/src/main/res -type f -name "*.xml" | while read f; do
             if grep -q "ic_launcher_background" "$f" 2>/dev/null; then
-              if [[ "$f" == *"mipmap-anydpi-v26"* ]]; then
-                # 적응형 아이콘 XML은 참조만 하므로 건드리지 않음
-                continue
-              fi
-              echo "      🗑️  $f 에서 제거"
-              # 한 줄짜리 색상 정의 제거
+              if [[ "$f" == *"mipmap-anydpi-v26"* ]]; then continue; fi
               sed -i '/<color name="ic_launcher_background"/d' "$f"
             fi
           done
-
-          # 2단계: 빈 파일이 된 ic_launcher_background.xml 삭제
           IC_BG_FILE="android/app/src/main/res/values/ic_launcher_background.xml"
-          if [ -f "$IC_BG_FILE" ]; then
-            # 색상 정의가 없으면 파일 자체를 빈 resources로 만들거나 삭제
-            if ! grep -q "<color" "$IC_BG_FILE"; then
-              echo "      🗑️  빈 $IC_BG_FILE 파일 삭제"
-              rm -f "$IC_BG_FILE"
-            fi
+          if [ -f "$IC_BG_FILE" ] && ! grep -q "<color" "$IC_BG_FILE"; then
+            rm -f "$IC_BG_FILE"
           fi
 
-          # 3단계: 메인 colors.xml에 ic_launcher_background 한 번만 추가
           MAIN_COLORS="android/app/src/main/res/values/colors.xml"
           if [ ! -f "$MAIN_COLORS" ]; then
-            echo "  2️⃣  colors.xml 새로 생성"
             cat > "$MAIN_COLORS" << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
@@ -158,19 +209,9 @@ jobs:
           </resources>
           EOF
           else
-            echo "  2️⃣  기존 colors.xml에 ic_launcher_background 추가"
             sed -i 's|</resources>|    <color name="ic_launcher_background">#EF4444</color>\n</resources>|' "$MAIN_COLORS"
           fi
 
-          # 4단계: 결과 확인
-          echo ""
-          echo "  ✅ 최종 colors.xml:"
-          cat "$MAIN_COLORS"
-          echo ""
-          echo "  ✅ ic_launcher_background 검색 결과 (모든 xml):"
-          grep -rn "ic_launcher_background" android/app/src/main/res/ | grep -v "mipmap-anydpi-v26" || echo "    (적응형 아이콘 XML 외에는 없음 = 정상)"
-
-          # 알림 아이콘
           for entry in "mdpi:24" "hdpi:36" "xhdpi:48" "xxhdpi:72" "xxxhdpi:96"; do
             density="${entry%:*}"
             size="${entry#*:}"
@@ -178,9 +219,6 @@ jobs:
             mkdir -p "$target_dir"
             rsvg-convert -w "$size" -h "$size" foodtruck-icon.svg -o "$target_dir/ic_stat_notification.png"
           done
-
-          echo ""
-          echo "🎉 모든 아이콘 생성 완료!"
 
       - name: Cache Gradle
         uses: actions/cache@v4
