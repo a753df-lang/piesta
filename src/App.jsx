@@ -10,7 +10,7 @@ import {
   CheckSquare, Square, TrendingUp, Navigation, Map,
 } from 'lucide-react';
 
-import { fetchNotices, isOnline, storage, API_BASE } from './api';
+import { fetchNotices, isOnline, storage, API_BASE, registerUserSiteOnServer, removeUserSiteFromServer } from './api';
 import { notifyNewNotices, scheduleDeadlineReminders, listenNotificationClick, ensurePermission } from './notifications';
 import { searchRegions, generateSitesFromRegion } from './regionsDB';
 
@@ -500,13 +500,31 @@ export default function App() {
     const nextRegions = [...customRegions, regionName];
     setCustomRegions(nextRegions);
     await storage.setCustomRegions(nextRegions);
+
     const generatedSites = generateSitesFromRegion(regionData).map(s => ({
       ...s, id: 'cs_' + Date.now() + Math.random().toString(36).slice(2, 6),
     }));
+
+    // 🆕 각 생성된 사이트를 서버에도 등록
+    let serverSuccessCount = 0;
+    for (const site of generatedSites) {
+      const result = await registerUserSiteOnServer({
+        region: site.region,
+        name: site.name,
+        url: site.url,
+        type: site.type || '관공서',
+      });
+      if (result.ok) {
+        site.serverId = result.serverId;
+        serverSuccessCount++;
+      }
+    }
+
     const nextSites = [...customSites, ...generatedSites];
     setCustomSites(nextSites);
     await storage.setCustomSites(nextSites);
-    alert('✅ ' + regionName + ' 추가됨\n시청 사이트도 자동 등록되었어요');
+
+    alert(`✅ ${regionName} 추가됨\n시청 사이트 ${generatedSites.length}개 등록 (서버 ${serverSuccessCount}개 자동 크롤링)`);
   };
 
   const addCustomRegionManual = async (name) => {
@@ -536,13 +554,44 @@ export default function App() {
     }
     let url = site.url.trim();
     if (!/^https?:\/\//.test(url)) url = 'https://' + url;
-    const next = [...customSites, { ...site, url, id: 'cs_' + Date.now() }];
+
+    const newSite = { ...site, url, id: 'cs_' + Date.now() };
+
+    // 🆕 서버에도 등록 시도 (자동 크롤링 + 알림용)
+    const serverResult = await registerUserSiteOnServer({
+      region: site.region,
+      name: site.name,
+      url,
+      type: site.type || '관공서',
+    });
+
+    if (serverResult.ok) {
+      newSite.serverId = serverResult.serverId;
+      console.log('✅ 서버 등록 성공:', serverResult.serverId);
+    } else {
+      console.warn('⚠️ 서버 등록 실패, 앱에만 저장됨:', serverResult.error);
+    }
+
+    const next = [...customSites, newSite];
     setCustomSites(next);
     await storage.setCustomSites(next);
+
+    if (serverResult.ok) {
+      alert('✅ 사이트 등록 완료!\n서버에서 자동 크롤링 시작합니다.\n(잠시 후 공고가 나타날 수 있어요)');
+    } else {
+      alert('⚠️ 앱에 저장됐지만 서버 등록은 실패했어요.\n사이트는 사용 가능하지만 자동 알림은 안 옵니다.');
+    }
   };
 
   const removeCustomSite = async (id) => {
     if (!confirm('이 사이트를 삭제할까요?')) return;
+    const target = customSites.find(s => s.id === id);
+
+    // 🆕 서버에서도 삭제
+    if (target && target.serverId) {
+      await removeUserSiteFromServer(target.serverId);
+    }
+
     const next = customSites.filter(s => s.id !== id);
     setCustomSites(next);
     await storage.setCustomSites(next);
