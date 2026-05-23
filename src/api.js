@@ -2,7 +2,7 @@
 import { Preferences } from '@capacitor/preferences';
 import { Network } from '@capacitor/network';
 
-export const API_BASE = 'https://piesta-server.onrender.com';
+export const API_BASE = 'https://your-server.com';
 
 export async function fetchNotices({ region, search } = {}) {
   const params = new URLSearchParams();
@@ -44,6 +44,39 @@ export async function isOnline() {
     return status.connected;
   } catch {
     return true;
+  }
+}
+
+// ========== 사용자 사이트 서버 API ==========
+
+export async function registerUserSiteOnServer({ region, name, url, type }) {
+  try {
+    const res = await fetch(`${API_BASE}/api/user-sites`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ region, name, url, type }),
+    });
+    if (!res.ok) throw new Error(`서버 등록 실패: ${res.status}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || '서버 등록 실패');
+    return { ok: true, serverId: data.id };
+  } catch (err) {
+    console.warn('서버 사이트 등록 실패:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+export async function removeUserSiteFromServer(serverId) {
+  if (!serverId) return { ok: true };
+  try {
+    const res = await fetch(`${API_BASE}/api/user-sites/${serverId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(`서버 삭제 실패: ${res.status}`);
+    return { ok: true };
+  } catch (err) {
+    console.warn('서버 사이트 삭제 실패:', err.message);
+    return { ok: false, error: err.message };
   }
 }
 
