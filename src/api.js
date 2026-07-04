@@ -80,6 +80,19 @@ export async function removeUserSiteFromServer(serverId) {
   }
 }
 
+export async function deleteNoticeFromServer(id) {
+  try {
+    const res = await fetch(`${API_BASE}/api/notices/${id}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(`공고 삭제 실패: ${res.status}`);
+    return { ok: true };
+  } catch (err) {
+    console.warn('공고 삭제 실패:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
 const KEYS = {
   cachedNotices: 'cached_notices',
   favorites: 'favorites',
