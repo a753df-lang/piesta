@@ -268,9 +268,8 @@ export default function App() {
       const merged = fresh.length > 0 ? fresh : cached;
       setServerNotices(merged);
       await storage.setCachedNotices(merged);
-      // 백그라운드 알림이 같은 공고를 또 알리지 않도록 기준 시각 전달
-      const newest = fresh.reduce((m, n) => Math.max(m, n.createdAt || 0), 0);
-      if (newest) markNoticesSeenInBackground(newest);
+      // 백그라운드 알림이 같은 공고를 또 알리지 않도록 본 공고 ID 전달
+      markNoticesSeenInBackground(fresh.map(n => n.id));
       setLastSync(new Date());
       if (curSettings.notifyEnabled) {
         const all = [...merged, ...manualNotices];

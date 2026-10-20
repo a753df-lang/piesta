@@ -4,8 +4,9 @@ import { Capacitor } from '@capacitor/core';
 
 const LABEL = 'com.foodtruck.alarm.check';
 
-export function markNoticesSeenInBackground(ts) {
-  if (!Capacitor.isNativePlatform()) return;
-  BackgroundRunner.dispatchEvent({ label: LABEL, event: 'markSeen', details: { ts } })
+// 앱에서 이미 본(알린) 공고 ID 를 백그라운드 확인에 알려줘서 같은 공고를 두 번 알리지 않게 함
+export function markNoticesSeenInBackground(ids) {
+  if (!Capacitor.isNativePlatform() || !ids || !ids.length) return;
+  BackgroundRunner.dispatchEvent({ label: LABEL, event: 'markSeen', details: { ids } })
     .catch(() => {});
 }
