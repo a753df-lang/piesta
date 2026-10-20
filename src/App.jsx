@@ -10,8 +10,9 @@ import {
   CheckSquare, Square, TrendingUp, Navigation, Map,
 } from 'lucide-react';
 
-import { fetchNotices, isOnline, storage, API_BASE, registerUserSiteOnServer, removeUserSiteFromServer, deleteNoticeFromServer, addRegionOnServer, removeRegionOnServer, rediscoverRegionOnServer, syncWithServer } from './api';
+import { fetchNotices, isOnline, storage, API_BASE, registerUserSiteOnServer, removeUserSiteFromServer, deleteNoticeFromServer, addRegionOnServer, removeRegionOnServer, rediscoverRegionOnServer, syncWithServer, exportBackup, importBackup } from './api';
 import { markNoticesSeenInBackground } from './background';
+import { checkForUpdate, openUpdateDownload, getCurrentVersion } from './updater';
 import { notifyNewNotices, scheduleDeadlineReminders, listenNotificationClick, ensurePermission } from './notifications';
 import { searchRegions } from './regionsDB';
 
@@ -142,6 +143,8 @@ export default function App() {
   const [error, setError] = useState(null);
   const [customRegions, setCustomRegions] = useState([]);
   const [customSites, setCustomSites] = useState([]);
+  const [updateInfo, setUpdateInfo] = useState(null); // 🆕 새 버전 정보 (있으면 팝업)
+  const [showUpdate, setShowUpdate] = useState(false);
   const [regionStatus, setRegionStatus] = useState({}); // 🆕 서버 자동 연결 상태 { 지역명: {status, message, sources} }
   const [showRegionManager, setShowRegionManager] = useState(false);
   const [showSiteManager, setShowSiteManager] = useState(false);
@@ -196,6 +199,10 @@ export default function App() {
       });
       await refresh();
       await SplashScreen.hide();
+      // 🆕 새 버전 확인 (조용히, 있을 때만 팝업)
+      checkForUpdate().then(info => {
+        if (info.hasUpdate) { setUpdateInfo(info); setShowUpdate(true); }
+      });
     };
     init();
   }, []);
@@ -855,7 +862,8 @@ export default function App() {
               customRegions={customRegions} customSites={customSites}
               lastSync={lastSync} onRefresh={refresh} refreshing={refreshing}
               onOpenRegionManager={() => setShowRegionManager(true)}
-              onOpenSiteManager={() => setShowSiteManager(true)} />
+              onOpenSiteManager={() => setShowSiteManager(true)}
+              onUpdateFound={(info) => { setUpdateInfo(info); setShowUpdate(true); }} />
           )}
         </main>
 
@@ -902,6 +910,7 @@ export default function App() {
         {showAdd && <NoticeForm initial={editingNotice} onSave={saveManualNotice} onClose={() => { setShowAdd(false); setEditingNotice(null); }} regions={formRegions} />}
         {showEventForm && <EventForm initial={editingEvent} onSave={saveEvent} onClose={() => { setShowEventForm(false); setEditingEvent(null); }} regions={formRegions} onOpenMap={openNaverMap} />}
         {showRegionManager && <RegionManager customRegions={customRegions} defaultRegions={DEFAULT_REGIONS} regionStatus={regionStatus} onRetry={retryRegion} onAddFromDB={addRegionFromDB} onAddManual={addCustomRegionManual} onRemove={removeCustomRegion} onClose={() => setShowRegionManager(false)} />}
+        {showUpdate && updateInfo && <UpdateDialog info={updateInfo} onClose={() => setShowUpdate(false)} />}
         {showSiteManager && <SiteManager customSites={customSites} regions={formRegions} onAdd={addCustomSite} onRemove={removeCustomSite} onClose={() => setShowSiteManager(false)} />}
       </div>
     </div>
@@ -1474,7 +1483,105 @@ function SitesView({ sites, onOpenUrl, onRemoveSite, onOpenSiteManager }) {
 }
 
 // ============ 설정 ============
-function SettingsView({ settings, onChange, noticeCount, favoriteCount, eventCount, stats, customRegions, customSites, lastSync, onRefresh, refreshing, onOpenRegionManager, onOpenSiteManager }) {
+// ============ 🆕 업데이트 안내 ============
+function UpdateDialog({ info, onClose }) {
+  const { current, latest } = info;
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center sm:items-center p-0 sm:p-4">
+      <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4">
+        <div>
+          <h2 className="text-base font-black text-stone-900">🎉 새 버전이 있어요</h2>
+          <p className="text-xs text-stone-500 mt-1">현재 v{current.version} → 최신 v{latest.version}</p>
+        </div>
+        {latest.notes && (
+          <div className="bg-stone-50 rounded-xl p-3 text-[12px] text-stone-700 whitespace-pre-wrap max-h-48 overflow-y-auto">{latest.notes}</div>
+        )}
+        <p className="text-[11px] text-stone-500">
+          다운로드가 끝나면 알림창이나 다운로드 폴더에서 파일을 눌러 설치하세요. 데이터는 그대로 유지돼요.
+          처음 한 번은 "출처를 알 수 없는 앱 허용"을 물어볼 수 있어요.
+        </p>
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-stone-100 text-stone-600 font-bold text-sm">나중에</button>
+          <button onClick={() => { openUpdateDownload(latest.apkUrl); onClose(); }}
+            className="flex-1 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 text-white font-black text-sm active:scale-95">업데이트</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ 🆕 앱 정보 / 업데이트 / 백업 ============
+function AppInfoSection({ onUpdateFound }) {
+  const [version, setVersion] = useState(null);
+  const [checking, setChecking] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [backupText, setBackupText] = useState('');
+  const [mode, setMode] = useState(null); // 'export' | 'import'
+
+  useEffect(() => { getCurrentVersion().then(setVersion); }, []);
+
+  const check = async () => {
+    setChecking(true); setMsg('');
+    const info = await checkForUpdate();
+    setChecking(false);
+    if (info.error) setMsg('확인 실패: ' + info.error);
+    else if (info.hasUpdate) onUpdateFound && onUpdateFound(info);
+    else setMsg(info.latest ? `최신 버전이에요 (v${info.latest.version})` : '아직 배포된 버전이 없어요');
+  };
+
+  const doExport = async () => {
+    const text = await exportBackup();
+    setBackupText(text); setMode('export');
+    try { await navigator.clipboard.writeText(text); setMsg('백업 내용을 복사했어요. 메모장이나 카톡 "나와의 채팅"에 붙여넣어 보관하세요.'); }
+    catch { setMsg('아래 내용을 길게 눌러 전체 선택 → 복사해서 보관하세요.'); }
+  };
+
+  const doImport = async () => {
+    try {
+      const n = await importBackup(backupText);
+      alert(`✅ ${n}개 항목 복원 완료. 앱을 다시 불러옵니다.`);
+      window.location.reload();
+    } catch (err) { alert('⚠️ ' + err.message); }
+  };
+
+  return (
+    <section className="bg-white border-2 border-stone-200 rounded-2xl overflow-hidden">
+      <div className="px-4 py-3 bg-stone-50 border-b border-stone-200">
+        <h3 className="text-xs font-black text-stone-700">앱 정보</h3>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-stone-900">버전 {version ? 'v' + version.version : '...'}</div>
+            {msg && <div className="text-[11px] text-stone-500 mt-0.5">{msg}</div>}
+          </div>
+          <button onClick={check} disabled={checking}
+            className="shrink-0 px-3 py-2 rounded-lg bg-stone-800 text-white text-xs font-bold active:scale-95 disabled:opacity-50">
+            {checking ? '확인 중...' : '업데이트 확인'}
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={doExport} className="py-2.5 rounded-lg bg-stone-100 text-stone-700 text-xs font-bold active:scale-95">📤 데이터 백업</button>
+          <button onClick={() => { setMode('import'); setBackupText(''); setMsg(''); }} className="py-2.5 rounded-lg bg-stone-100 text-stone-700 text-xs font-bold active:scale-95">📥 데이터 복원</button>
+        </div>
+        {mode && (
+          <div className="space-y-2">
+            <textarea value={backupText} onChange={(e) => setBackupText(e.target.value)} readOnly={mode === 'export'}
+              placeholder="보관해 둔 백업 내용을 여기에 붙여넣으세요"
+              className="w-full h-28 p-2 text-[10px] font-mono bg-stone-50 border border-stone-200 rounded-lg" />
+            {mode === 'import' && (
+              <button onClick={doImport} disabled={!backupText.trim()}
+                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-black disabled:opacity-40">복원하기</button>
+            )}
+          </div>
+        )}
+        <p className="text-[10px] text-stone-400">백업에는 일정·수익·즐겨찾기·직접 등록한 공고·지역·사이트·설정이 들어가요.</p>
+      </div>
+    </section>
+  );
+}
+
+function SettingsView({ settings, onChange, noticeCount, favoriteCount, eventCount, stats, customRegions, customSites, lastSync, onRefresh, refreshing, onOpenRegionManager, onOpenSiteManager, onUpdateFound }) {
   const sortedRegions = Object.entries(stats.byRegion).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   return (
@@ -1573,6 +1680,8 @@ function SettingsView({ settings, onChange, noticeCount, favoriteCount, eventCou
           </button>
         </div>
       </section>
+
+      <AppInfoSection onUpdateFound={onUpdateFound} />
 
       <section className="bg-white border-2 border-stone-200 rounded-2xl p-4">
         <h3 className="text-xs font-black text-stone-700 mb-3">내 데이터</h3>

@@ -183,6 +183,32 @@ const KEYS = {
   events: 'my_events',
 };
 
+// ========== 🆕 백업 / 복원 (앱 재설치 시 데이터 옮기기용) ==========
+const BACKUP_KEYS = ['favorites', 'manualNotices', 'settings', 'customRegions', 'customSites', 'events'];
+
+export async function exportBackup() {
+  const data = {};
+  for (const k of BACKUP_KEYS) {
+    const { value } = await Preferences.get({ key: KEYS[k] });
+    if (value != null) data[k] = JSON.parse(value);
+  }
+  return JSON.stringify({ app: 'foodtruck-alarm', version: 1, exportedAt: new Date().toISOString(), data });
+}
+
+// 반환: 복원된 항목 수
+export async function importBackup(text) {
+  let parsed;
+  try { parsed = JSON.parse(String(text || '').trim()); } catch { throw new Error('백업 내용 형식이 올바르지 않아요'); }
+  if (!parsed || parsed.app !== 'foodtruck-alarm' || !parsed.data) throw new Error('푸드트럭 알리미 백업이 아니에요');
+  let count = 0;
+  for (const k of BACKUP_KEYS) {
+    if (parsed.data[k] === undefined) continue;
+    await Preferences.set({ key: KEYS[k], value: JSON.stringify(parsed.data[k]) });
+    count++;
+  }
+  return count;
+}
+
 export const storage = {
   async getCachedNotices() {
     const { value } = await Preferences.get({ key: KEYS.cachedNotices });
