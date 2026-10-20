@@ -28,7 +28,7 @@
       "src": "runners/background.js",
       "event": "checkNotices",
       "repeat": true,
-      "interval": 30,
+      "interval": 60,
       "autoStart": true
     }
   }

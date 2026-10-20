@@ -1,5 +1,6 @@
 // 백그라운드 알림 러너 (@capacitor/background-runner)
-// 앱이 꺼져 있어도 안드로이드가 약 30분마다 실행 → 서버에 새 공고가 있으면 알림
+// 안드로이드가 약 1시간마다 깨우지만, 실제로 서버에 묻는 건 하루 3번뿐
+// (서버 수집 시각 10시·14시·17시 + 수집이 끝날 30분 뒤) → 그 외에는 인터넷을 전혀 안 씀
 // 주의: 웹뷰 밖의 별도 JS 환경이라 fetch / CapacitorKV / CapacitorNotifications 만 사용 가능
 //
 // 중복 알림 방지: 무료 서버는 재시작되면 DB가 비워지고 공고를 다시 수집하므로
@@ -8,6 +9,24 @@ const API_BASE = 'https://piesta-server.onrender.com';
 const KEY_SEEN = 'bg_seen_ids';
 const KEY_INIT = 'bg_initialized';
 const MAX_SEEN = 500;
+const KEY_LAST_CHECK = 'bg_last_check';
+const CHECK_HOURS = [10, 14, 17]; // 서버 수집 시각 (한국시간)
+const CHECK_DELAY_MIN = 30;       // 수집이 끝날 때까지 기다리는 시간
+const KST = 9 * 3600000;
+
+// 가장 최근의 "확인할 시각" (예: 14:30). 한국시간 기준
+function latestCheckTime(now) {
+  const k = new Date(now + KST);
+  const dayStart = Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate()) - KST;
+  const times = CHECK_HOURS.map(h => dayStart + h * 3600000 + CHECK_DELAY_MIN * 60000).filter(t => t <= now);
+  if (times.length) return times[times.length - 1];
+  return dayStart - 86400000 + CHECK_HOURS[CHECK_HOURS.length - 1] * 3600000 + CHECK_DELAY_MIN * 60000;
+}
+
+function readNum(key) {
+  try { const r = CapacitorKV.get(key); const v = r && r.value ? parseInt(r.value, 10) : 0; return isNaN(v) ? 0 : v; }
+  catch (e) { return 0; }
+}
 
 function readSeen() {
   try {
@@ -48,10 +67,14 @@ addEventListener('markSeen', (resolve, reject, args) => {
 
 addEventListener('checkNotices', async (resolve) => {
   try {
+    const now = Date.now();
+    // 이미 이번 수집 결과를 확인했으면 아무것도 안 함 (인터넷 사용 없음)
+    if (isInitialized() && readNum(KEY_LAST_CHECK) >= latestCheckTime(now)) { resolve(); return; }
     const res = await fetch(API_BASE + '/api/notices?limit=100');
     if (!res.ok) { resolve(); return; }
     const data = await res.json();
     const items = (data && data.notices) || [];
+    try { CapacitorKV.set(KEY_LAST_CHECK, String(now)); } catch (e) {}
 
     // 처음 실행이면 지금 있는 공고는 "이미 본 것"으로 기록만 하고 알림은 보내지 않음 (기존 공고 폭탄 방지)
     if (!isInitialized()) {
