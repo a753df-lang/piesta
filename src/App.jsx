@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { StatusBar, Style } from '@capacitor/status-bar';
@@ -154,11 +154,34 @@ export default function App() {
   const [editingEvent, setEditingEvent] = useState(null);
   const [eventTabFilter, setEventTabFilter] = useState('upcoming');
   const [selectedEventId, setSelectedEventId] = useState(null); // 🆕 홈에서 일정 선택 시
+  const [toast, setToast] = useState(''); // 🆕 '한 번 더 누르면 종료' 안내
+  const tabHistory = useRef([]);           // 🆕 뒤로가기용 이전 탭 기록
+  const lastBackAt = useRef(0);
+  const backHandlerRef = useRef(null);
+
+  // 탭 이동 (이전 탭을 기록해서 뒤로가기로 돌아갈 수 있게)
+  const goTab = (next) => {
+    if (next === tab) return;
+    tabHistory.current.push(tab);
+    if (tabHistory.current.length > 20) tabHistory.current.shift();
+    setTab(next);
+  };
 
   const allNotices = useMemo(() => [...serverNotices, ...manualNotices], [serverNotices, manualNotices]);
   const allRegions = useMemo(() => ['전체', ...DEFAULT_REGIONS, ...customRegions], [customRegions]);
   const formRegions = useMemo(() => [...DEFAULT_REGIONS, ...customRegions], [customRegions]);
-  const allSites = useMemo(() => [...DEFAULT_SITES, ...customSites], [customSites]);
+  // 🆕 서버가 지역별로 자동으로 찾은 게시판(고시공고·공지사항)을 사이트 목록에 자동 반영
+  const autoSites = useMemo(() => {
+    const list = [];
+    for (const r of formRegions) {
+      const info = regionStatus[r];
+      for (const src of (info && info.sources) || []) {
+        list.push({ region: r, name: src.name, url: src.link || src.url, type: '관공서', auto: true, status: src.status });
+      }
+    }
+    return list;
+  }, [formRegions, regionStatus]);
+  const allSites = useMemo(() => [...autoSites, ...DEFAULT_SITES, ...customSites], [autoSites, customSites]);
 
   useEffect(() => {
     const init = async () => {
@@ -186,14 +209,8 @@ export default function App() {
       listenNotificationClick(async (url) => {
         if (url) await Browser.open({ url });
       });
-      CapApp.addListener('backButton', () => {
-        if (showAdd || showRegionManager || showSiteManager || showEventForm) {
-          setShowAdd(false); setEditingNotice(null);
-          setShowRegionManager(false); setShowSiteManager(false);
-          setShowEventForm(false); setEditingEvent(null);
-        } else if (tab !== 'home') setTab('home');
-        else CapApp.exitApp();
-      });
+      // 리스너는 한 번만 등록되므로, 실제 처리는 매 렌더마다 갱신되는 backHandlerRef 에 맡김
+      CapApp.addListener('backButton', () => { if (backHandlerRef.current) backHandlerRef.current(); });
       CapApp.addListener('appStateChange', ({ isActive }) => {
         if (isActive && s.autoRefresh) refresh();
       });
@@ -747,10 +764,30 @@ export default function App() {
     return { thisMonthCount, thisMonthRevenue, totalRevenue, byRegion };
   }, [events]);
 
+  // 🆕 안드로이드 뒤로가기: ① 열린 창 닫기 → ② 이전 탭 → ③ 홈에서는 두 번 눌러야 종료
+  backHandlerRef.current = () => {
+    if (showUpdate) { setShowUpdate(false); return; }
+    if (showAdd || editingNotice) { setShowAdd(false); setEditingNotice(null); return; }
+    if (showEventForm || editingEvent) { setShowEventForm(false); setEditingEvent(null); return; }
+    if (showRegionManager) { setShowRegionManager(false); return; }
+    if (showSiteManager) { setShowSiteManager(false); return; }
+    if (tabHistory.current.length > 0) {
+      const prev = tabHistory.current.pop();
+      setTab(prev);
+      return;
+    }
+    if (tab !== 'home') { setTab('home'); return; }
+    const now = Date.now();
+    if (now - lastBackAt.current < 2000) { CapApp.exitApp(); return; }
+    lastBackAt.current = now;
+    setToast('한 번 더 누르면 종료돼요');
+    setTimeout(() => setToast(''), 2000);
+  };
+
   // 🆕 홈에서 일정 카드 누르면 일정 탭으로 이동하면서 해당 일정 펼치기
   const goToEvent = (eventId) => {
     setSelectedEventId(eventId);
-    setTab('events');
+    goTab('events');
     setEventTabFilter('upcoming');
   };
 
@@ -815,7 +852,7 @@ export default function App() {
               stats={stats}
               notifyEnabled={settings.notifyEnabled}
               daysUntil={daysUntil}
-              onTabChange={setTab}
+              onTabChange={goTab}
               onOpenUrl={openUrl}
               onOpenMap={openNaverMap}
               onGoToEvent={goToEvent}
@@ -867,6 +904,10 @@ export default function App() {
           )}
         </main>
 
+        {toast && (
+          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-900/90 text-white text-xs font-bold px-4 py-2.5 rounded-full z-[60] shadow-lg">{toast}</div>
+        )}
+
         <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white border-t border-stone-200 z-30 safe-bottom">
           <div className="grid grid-cols-5 gap-1 px-2 py-2">
             {[
@@ -876,7 +917,7 @@ export default function App() {
               { id: 'sites', icon: Building2, label: '사이트' },
               { id: 'settings', icon: Settings, label: '설정' },
             ].map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)}
+              <button key={t.id} onClick={() => goTab(t.id)}
                 className={'flex flex-col items-center gap-0.5 py-2 rounded-xl ' + (tab === t.id ? 'text-red-600 bg-red-50' : 'text-stone-500 active:bg-stone-100')}>
                 <t.icon className="w-5 h-5" strokeWidth={tab === t.id ? 2.5 : 2} />
                 <span className={'text-[10px] ' + (tab === t.id ? 'font-bold' : 'font-medium')}>{t.label}</span>
@@ -911,7 +952,7 @@ export default function App() {
         {showEventForm && <EventForm initial={editingEvent} onSave={saveEvent} onClose={() => { setShowEventForm(false); setEditingEvent(null); }} regions={formRegions} onOpenMap={openNaverMap} />}
         {showRegionManager && <RegionManager customRegions={customRegions} defaultRegions={DEFAULT_REGIONS} regionStatus={regionStatus} onRetry={retryRegion} onAddFromDB={addRegionFromDB} onAddManual={addCustomRegionManual} onRemove={removeCustomRegion} onClose={() => setShowRegionManager(false)} />}
         {showUpdate && updateInfo && <UpdateDialog info={updateInfo} onClose={() => setShowUpdate(false)} />}
-        {showSiteManager && <SiteManager customSites={customSites} regions={formRegions} onAdd={addCustomSite} onRemove={removeCustomSite} onClose={() => setShowSiteManager(false)} />}
+        {showSiteManager && <SiteManager customSites={customSites} regions={formRegions} regionStatus={regionStatus} onAutoFind={retryRegion} onAdd={addCustomSite} onRemove={removeCustomSite} onClose={() => setShowSiteManager(false)} />}
       </div>
     </div>
   );
@@ -1436,10 +1477,10 @@ function SitesView({ sites, onOpenUrl, onRemoveSite, onOpenSiteManager }) {
     <div className="space-y-5">
       <button onClick={onOpenSiteManager}
         className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-3 rounded-2xl flex items-center justify-center gap-2 active:scale-95 shadow-md">
-        <Plus className="w-5 h-5" />새 사이트 추가
+        <Plus className="w-5 h-5" />사이트 자동 찾기 / 추가
       </button>
       {Object.keys(grouped).length === 0 ? (
-        <EmptyState message="이 지역에 등록된 사이트가 없어요" sub="상단 + 버튼으로 사이트를 추가해보세요" />
+        <EmptyState message="이 지역에 등록된 사이트가 없어요" sub="설정 → 지역 관리에서 지역을 추가하면 자동으로 찾아줘요" />
       ) : (
         Object.keys(grouped).map(region => (
           <section key={region}>
@@ -1461,6 +1502,7 @@ function SitesView({ sites, onOpenUrl, onRemoveSite, onOpenSiteManager }) {
                         <div className="flex items-center gap-1.5">
                           <h3 className="text-sm font-bold text-stone-900 truncate">{s.name}</h3>
                           {isCustom && <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded">내 사이트</span>}
+                          {s.auto && <span className={'text-[9px] font-bold px-1 py-0.5 rounded ' + (s.status === 'empty' || s.status === 'error' ? 'text-red-600 bg-red-50' : 'text-green-700 bg-green-50')}>{s.status === 'empty' || s.status === 'error' ? '자동 · 읽기 실패' : '자동 수집 중'}</span>}
                         </div>
                         <p className="text-[11px] text-stone-500 mt-0.5">{s.type}</p>
                       </div>
@@ -2077,8 +2119,10 @@ function RegionManager({ customRegions, defaultRegions, regionStatus = {}, onRet
 }
 
 // ============ 사이트 관리 ============
-function SiteManager({ customSites, regions, onAdd, onRemove, onClose }) {
+function SiteManager({ customSites, regions, regionStatus = {}, onAutoFind, onAdd, onRemove, onClose }) {
   const [form, setForm] = useState({ region: regions[0] || '논산', name: '', url: '', type: '관공서' });
+  const info = regionStatus[form.region];
+  const finding = info && info.status === 'pending';
 
   const handleAdd = () => {
     if (!form.name.trim() || !form.url.trim()) { alert('사이트명과 URL을 입력해주세요'); return; }
@@ -2097,7 +2141,7 @@ function SiteManager({ customSites, regions, onAdd, onRemove, onClose }) {
         </div>
         <div className="p-5 space-y-5">
           <div className="space-y-3">
-            <h3 className="text-xs font-black text-stone-700">새 사이트 추가</h3>
+            <h3 className="text-xs font-black text-stone-700">🔍 지역을 고르면 자동으로 찾아요</h3>
             <Field label="지역">
               <div className="grid grid-cols-4 gap-1.5 max-h-32 overflow-y-auto">
                 {regions.map(r => (
@@ -2108,6 +2152,26 @@ function SiteManager({ customSites, regions, onAdd, onRemove, onClose }) {
                 ))}
               </div>
             </Field>
+            {/* 🆕 자동 찾기 결과 */}
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 space-y-2">
+              <div className="text-[11px] font-bold text-blue-900">
+                {finding ? '⏳ ' + (info.message || '찾는 중...') : info ? (info.message || '') : '아직 확인 전이에요'}
+              </div>
+              {((info && info.sources) || []).map((src, i) => (
+                <div key={i} className="text-[11px] text-stone-700 flex items-center gap-1.5">
+                  <span>{src.status === 'empty' || src.status === 'error' ? '⚠️' : '✅'}</span>
+                  <span className="font-bold">{src.name}</span>
+                </div>
+              ))}
+              <button onClick={() => onAutoFind && onAutoFind(form.region)} disabled={finding}
+                className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-black py-2.5 rounded-lg text-xs active:scale-95 disabled:opacity-50">
+                {finding ? '찾는 중... (최대 1분)' : (info && info.sources && info.sources.length ? '다시 찾기' : '이 지역 사이트 자동으로 찾기')}
+              </button>
+            </div>
+
+            <details className="bg-stone-50 rounded-xl p-3">
+            <summary className="text-xs font-black text-stone-700 cursor-pointer">✏️ 자동으로 못 찾을 때 직접 입력</summary>
+            <div className="mt-3 space-y-3">
             <Field label="사이트명">
               <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="예: 천안시청 공지사항"
                 className="w-full px-4 py-3 bg-stone-100 rounded-xl text-sm font-medium focus:outline-none focus:bg-stone-200" />
@@ -2130,6 +2194,8 @@ function SiteManager({ customSites, regions, onAdd, onRemove, onClose }) {
               className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-black py-3 rounded-xl text-sm shadow-md active:scale-95">
               사이트 추가
             </button>
+            </div>
+            </details>
           </div>
           <div>
             <h3 className="text-xs font-black text-stone-700 mb-2">내가 추가한 사이트 ({customSites.length})</h3>
