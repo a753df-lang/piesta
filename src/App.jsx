@@ -227,7 +227,7 @@ export default function App() {
         const map = {};
         for (const r of sync.regions) map[r.name] = r;
         setRegionStatus(map);
-        const idByKey = new Map(sync.sites.map(s => [s.url + '|' + s.name, s.serverId]));
+        const idByKey = new globalThis.Map(sync.sites.map(s => [s.url + '|' + s.name, s.serverId]));
         const updatedSites = curSites.map(s => ({ ...s, serverId: idByKey.get(s.url + '|' + s.name) || s.serverId }));
         if (updatedSites.some((s, i) => s.serverId !== curSites[i].serverId)) {
           setCustomSites(updatedSites);
