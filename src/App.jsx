@@ -58,6 +58,9 @@ const DEFAULT_SITES = [
 ];
 
 const DEFAULT_REGIONS = ['논산', '부여', '공주', '서천', '보령', '청양', '익산', '군산', '김제', '전주', '완주'];
+// '논산시' → '논산', '서울 강남구' → '강남' (같은 지자체인지 비교할 때 사용)
+const regionKey = (name) => String(name || '').trim().split(/\s+/).pop().replace(/(특별자치시|특별자치도|광역시|특별시|시|군|구)$/, '');
+const isDefaultRegion = (name) => DEFAULT_REGIONS.some(d => regionKey(d) === regionKey(name));
 
 const DEFAULT_CHECKLIST = [
   { id: 'c1', text: '식자재 구입', done: false },
@@ -234,7 +237,14 @@ export default function App() {
       if (!net) { setError('오프라인 상태입니다'); return; }
       // 앱 복귀 리스너가 처음 만든 refresh 를 계속 쓰므로, 최신 값은 저장소에서 직접 읽음
       const curSettings = await storage.getSettings();
-      const curRegions = await storage.getCustomRegions();
+      let curRegions = await storage.getCustomRegions();
+      // 기본 지역과 겹치는 지역(예: '논산시')과 같은 지역의 중복은 정리
+      const cleaned = curRegions.filter((r, i) => !isDefaultRegion(r) && curRegions.findIndex(x => regionKey(x) === regionKey(r)) === i);
+      if (cleaned.length !== curRegions.length) {
+        curRegions = cleaned;
+        setCustomRegions(cleaned);
+        await storage.setCustomRegions(cleaned);
+      }
       const curSites = await storage.getCustomSites();
 
       // 🆕 서버 DB가 초기화돼도 내 지역·사이트가 자동 복구되도록 매번 동기화
@@ -565,7 +575,7 @@ export default function App() {
 
   const addRegionFromDB = async (regionData) => {
     const regionName = regionData.name;
-    if (DEFAULT_REGIONS.includes(regionName) || customRegions.includes(regionName)) {
+    if (isDefaultRegion(regionName) || customRegions.some(c => regionKey(c) === regionKey(regionName))) {
       alert('이미 추가된 지역입니다'); return;
     }
     const nextRegions = [...customRegions, regionName];
@@ -600,7 +610,7 @@ export default function App() {
   const addCustomRegionManual = async (name) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    if (DEFAULT_REGIONS.includes(trimmed) || customRegions.includes(trimmed)) {
+    if (isDefaultRegion(trimmed) || customRegions.some(c => regionKey(c) === regionKey(trimmed))) {
       alert('이미 존재하는 지역입니다'); return;
     }
     const next = [...customRegions, trimmed];
@@ -2080,7 +2090,7 @@ function RegionManager({ customRegions, defaultRegions, regionStatus = {}, onRet
                       <div className="text-[10px] font-bold text-purple-600 mb-1.5">{province}</div>
                       <div className="space-y-1.5">
                         {groupedResults[province].map(r => {
-                          const isAlreadyAdded = defaultRegions.includes(r.name) || customRegions.includes(r.name);
+                          const isAlreadyAdded = isDefaultRegion(r.name) || customRegions.some(c => regionKey(c) === regionKey(r.name));
                           return (
                             <button key={r.name} onClick={() => !isAlreadyAdded && onAddFromDB(r)} disabled={isAlreadyAdded}
                               className={'w-full text-left p-2.5 rounded-lg flex items-center justify-between ' + (isAlreadyAdded ? 'bg-stone-50 text-stone-400' : 'bg-white border border-stone-200 active:bg-purple-50')}>
