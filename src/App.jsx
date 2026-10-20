@@ -265,7 +265,10 @@ export default function App() {
         await storage.addSeenIds(trulyNew.map(n => n.id));
       }
       // 서버 응답이 비어 있으면(서버 재시작 직후 등) 기존 목록을 지우지 않음
-      const merged = fresh.length > 0 ? fresh : cached;
+      // 등록일이 한 달 넘은 공고는 보여주지 않음 (등록일 모르는 공고는 유지)
+      const cutoff = new Date(Date.now() + 9 * 3600000 - 30 * 86400000).toISOString().slice(0, 10);
+      const recent = (list) => list.filter(n => !n.deadline || n.deadline >= cutoff);
+      const merged = recent(fresh.length > 0 ? fresh : cached);
       setServerNotices(merged);
       await storage.setCachedNotices(merged);
       // 백그라운드 알림이 같은 공고를 또 알리지 않도록 본 공고 ID 전달
