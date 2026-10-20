@@ -31,6 +31,9 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # 기본값('tools')은 구글이 없앤 패키지라 실패함 → 필요한 것만 지정
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
 
       - name: Install ImageMagick (아이콘 변환용)
         run: |
