@@ -69,7 +69,7 @@ export async function addRegionOnServer(name) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
-    });
+    }, 180000); // 시청 + 문화재단까지 찾느라 1~2분 걸릴 수 있음
     return { ok: true, region: data.region };
   } catch (err) {
     console.warn('지역 서버 등록 실패:', err.message);
@@ -88,7 +88,7 @@ export async function removeRegionOnServer(name) {
 
 export async function rediscoverRegionOnServer(name) {
   try {
-    const data = await fetchJson(`${API_BASE}/api/regions/${encodeURIComponent(name)}/rediscover`, { method: 'POST' });
+    const data = await fetchJson(`${API_BASE}/api/regions/${encodeURIComponent(name)}/rediscover`, { method: 'POST' }, 180000);
     return { ok: true, region: data.region };
   } catch (err) {
     return { ok: false, error: err.message };

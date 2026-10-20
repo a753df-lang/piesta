@@ -181,7 +181,8 @@ export default function App() {
     }
     return list;
   }, [formRegions, regionStatus]);
-  const allSites = useMemo(() => [...autoSites, ...DEFAULT_SITES, ...customSites], [autoSites, customSites]);
+  // 사이트 목록 = 자동으로 찾은 게시판 + (자동으로 못 찾아서) 직접 추가한 사이트
+  const allSites = useMemo(() => [...autoSites, ...customSites], [autoSites, customSites]);
 
   useEffect(() => {
     const init = async () => {
@@ -568,7 +569,7 @@ export default function App() {
     const nextRegions = [...customRegions, regionName];
     setCustomRegions(nextRegions);
     await storage.setCustomRegions(nextRegions);
-    setRegionStatus(prev => ({ ...prev, [regionName]: { status: 'pending', message: '고시공고·공지사항 자동 연결 중...' } }));
+    setRegionStatus(prev => ({ ...prev, [regionName]: { status: 'pending', message: '시청·문화재단 사이트 자동으로 찾는 중... (1~2분)' } }));
 
     // 🆕 지역 이름만 서버에 보내면 서버가 고시공고·공지사항을 자동으로 찾아 연결
     const result = await addRegionOnServer(regionName);
@@ -890,7 +891,7 @@ export default function App() {
           )}
           {tab === 'sites' && (
             <SitesView sites={filteredSites} onOpenUrl={openUrl} onRemoveSite={removeCustomSite}
-              onOpenSiteManager={() => setShowSiteManager(true)} />
+              onOpenSiteManager={() => setShowRegionManager(true)} />
           )}
           {tab === 'settings' && (
             <SettingsView settings={settings} onChange={updateSettings}
@@ -950,7 +951,7 @@ export default function App() {
 
         {showAdd && <NoticeForm initial={editingNotice} onSave={saveManualNotice} onClose={() => { setShowAdd(false); setEditingNotice(null); }} regions={formRegions} />}
         {showEventForm && <EventForm initial={editingEvent} onSave={saveEvent} onClose={() => { setShowEventForm(false); setEditingEvent(null); }} regions={formRegions} onOpenMap={openNaverMap} />}
-        {showRegionManager && <RegionManager customRegions={customRegions} defaultRegions={DEFAULT_REGIONS} regionStatus={regionStatus} onRetry={retryRegion} onAddFromDB={addRegionFromDB} onAddManual={addCustomRegionManual} onRemove={removeCustomRegion} onClose={() => setShowRegionManager(false)} />}
+        {showRegionManager && <RegionManager customRegions={customRegions} defaultRegions={DEFAULT_REGIONS} regionStatus={regionStatus} onRetry={retryRegion} onAddFromDB={addRegionFromDB} onAddManual={addCustomRegionManual} onRemove={removeCustomRegion} onClose={() => setShowRegionManager(false)} onOpenManualSite={() => { setShowRegionManager(false); setShowSiteManager(true); }} />}
         {showUpdate && updateInfo && <UpdateDialog info={updateInfo} onClose={() => setShowUpdate(false)} />}
         {showSiteManager && <SiteManager customSites={customSites} regions={formRegions} regionStatus={regionStatus} onAutoFind={retryRegion} onAdd={addCustomSite} onRemove={removeCustomSite} onClose={() => setShowSiteManager(false)} />}
       </div>
@@ -1477,10 +1478,11 @@ function SitesView({ sites, onOpenUrl, onRemoveSite, onOpenSiteManager }) {
     <div className="space-y-5">
       <button onClick={onOpenSiteManager}
         className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-3 rounded-2xl flex items-center justify-center gap-2 active:scale-95 shadow-md">
-        <Plus className="w-5 h-5" />사이트 자동 찾기 / 추가
+        <Plus className="w-5 h-5" />지역 추가 (사이트 자동 연결)
       </button>
+      <p className="text-[11px] text-stone-500 -mt-2 px-1">지역을 추가하면 시청 고시공고·공지사항·입찰공고와 문화재단 같은 관련 기관 게시판을 자동으로 찾아서 매시간 확인해요.</p>
       {Object.keys(grouped).length === 0 ? (
-        <EmptyState message="이 지역에 등록된 사이트가 없어요" sub="설정 → 지역 관리에서 지역을 추가하면 자동으로 찾아줘요" />
+        <EmptyState message="아직 연결된 사이트가 없어요" sub="위 버튼으로 지역을 추가하면 자동으로 찾아줘요" />
       ) : (
         Object.keys(grouped).map(region => (
           <section key={region}>
@@ -1728,7 +1730,7 @@ function SettingsView({ settings, onChange, noticeCount, favoriteCount, eventCou
 
       <section className="bg-white border-2 border-stone-200 rounded-2xl overflow-hidden">
         <div className="px-4 py-3 bg-stone-50 border-b border-stone-200">
-          <h3 className="text-xs font-black text-stone-700">내 지역 / 사이트</h3>
+          <h3 className="text-xs font-black text-stone-700">내 지역</h3>
         </div>
         <div className="p-4 space-y-3">
           <button onClick={onOpenRegionManager}
@@ -1739,20 +1741,7 @@ function SettingsView({ settings, onChange, noticeCount, favoriteCount, eventCou
               </div>
               <div className="text-left">
                 <div className="text-sm font-bold text-stone-900">지역 관리</div>
-                <div className="text-[11px] text-stone-500">전국 검색 / 추가 {customRegions.length}개</div>
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-stone-400" />
-          </button>
-          <button onClick={onOpenSiteManager}
-            className="w-full flex items-center justify-between p-3 bg-stone-50 rounded-xl active:scale-[0.98]">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
-                <Building2 className="w-5 h-5" />
-              </div>
-              <div className="text-left">
-                <div className="text-sm font-bold text-stone-900">사이트 관리</div>
-                <div className="text-[11px] text-stone-500">추가한 사이트 {customSites.length}개</div>
+                <div className="text-[11px] text-stone-500">지역만 추가하면 시청·문화재단 사이트 자동 연결 (추가 {customRegions.length}개)</div>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-stone-400" />
@@ -2030,6 +2019,9 @@ function RegionStatusLine({ info, onRetry }) {
   return (
     <div className="mt-0.5">
       <div className={'text-[10px] font-bold ' + color}>{icon} {info.message || info.status}</div>
+      {(info.sources || []).length > 0 && (
+        <div className="text-[10px] text-stone-500 mt-0.5">확인 중인 곳: {(info.sources || []).map(s => s.name).join(' · ')}</div>
+      )}
       {problem.length > 0 && (
         <div className="text-[10px] text-red-500">최근 읽기 실패: {problem.map(s => s.name).join(', ')}</div>
       )}
@@ -2040,7 +2032,7 @@ function RegionStatusLine({ info, onRetry }) {
   );
 }
 
-function RegionManager({ customRegions, defaultRegions, regionStatus = {}, onRetry, onAddFromDB, onAddManual, onRemove, onClose }) {
+function RegionManager({ customRegions, defaultRegions, regionStatus = {}, onRetry, onAddFromDB, onAddManual, onRemove, onClose, onOpenManualSite }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [manualName, setManualName] = useState('');
 
@@ -2138,17 +2130,20 @@ function RegionManager({ customRegions, defaultRegions, regionStatus = {}, onRet
           </div>
           <div>
             <h3 className="text-xs font-black text-stone-700 mb-2">기본 지역 ({defaultRegions.length})</h3>
-            <div className="flex flex-wrap gap-1.5">
-              {defaultRegions.map(r => {
-                const st = regionStatus[r] && regionStatus[r].status;
-                const dot = st === 'ok' ? '🟢' : st === 'partial' ? '🟡' : st === 'failed' || st === 'unknown' ? '🔴' : '⚪';
-                return (
-                  <span key={r} title={(regionStatus[r] && regionStatus[r].message) || ''}
-                    className="text-[11px] font-bold text-stone-600 bg-stone-100 px-2.5 py-1 rounded-md">{dot} {r}</span>
-                );
-              })}
+            <div className="space-y-2">
+              {defaultRegions.map(r => (
+                <div key={r} className="p-3 bg-stone-50 border border-stone-200 rounded-xl">
+                  <span className="text-sm font-bold text-stone-800">{r}</span>
+                  <RegionStatusLine info={regionStatus[r]} onRetry={onRetry ? () => onRetry(r) : null} />
+                </div>
+              ))}
             </div>
           </div>
+          {onOpenManualSite && (
+            <button onClick={onOpenManualSite} className="w-full text-center text-[11px] text-stone-400 underline py-2">
+              자동으로 못 찾은 사이트가 있나요? 직접 추가하기
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -2172,7 +2167,7 @@ function SiteManager({ customSites, regions, regionStatus = {}, onAutoFind, onAd
       <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl max-h-[92vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-stone-200 px-5 py-4 flex items-center justify-between z-10">
           <h2 className="text-base font-black text-stone-900 flex items-center gap-2">
-            <Building2 className="w-5 h-5 text-blue-600" />사이트 관리
+            <Building2 className="w-5 h-5 text-blue-600" />사이트 직접 추가
           </h2>
           <button onClick={onClose} className="p-1 -mr-1"><X className="w-5 h-5 text-stone-500" /></button>
         </div>
@@ -2202,7 +2197,7 @@ function SiteManager({ customSites, regions, regionStatus = {}, onAutoFind, onAd
               ))}
               <button onClick={() => onAutoFind && onAutoFind(form.region)} disabled={finding}
                 className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-black py-2.5 rounded-lg text-xs active:scale-95 disabled:opacity-50">
-                {finding ? '찾는 중... (최대 1분)' : (info && info.sources && info.sources.length ? '다시 찾기' : '이 지역 사이트 자동으로 찾기')}
+                {finding ? '찾는 중... (1~2분)' : (info && info.sources && info.sources.length ? '다시 찾기' : '이 지역 사이트 자동으로 찾기')}
               </button>
             </div>
 
