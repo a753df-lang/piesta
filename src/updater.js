@@ -2,7 +2,6 @@
 // - 깃허브 Actions 가 main 에 push 될 때마다 v1.0.<빌드번호> 릴리스를 만들고 APK 를 첨부함
 // - 앱은 자신의 빌드번호(versionCode)와 최신 릴리스 번호를 비교해서 새 버전이 있으면 알려줌
 import { App as CapApp } from '@capacitor/app';
-import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
 
 const REPO = 'a753df-lang/piesta';
@@ -50,8 +49,36 @@ export async function checkForUpdate() {
   }
 }
 
-// APK 다운로드 → 알림창/다운로드 폴더에서 눌러서 설치
+// 외부 브라우저(크롬)로 열기 - 앱 내 설치가 안 될 때 예비 방법
+// (앱 안 브라우저 탭은 파일 다운로드를 조용히 닫아버리는 경우가 많아서 외부 브라우저로 보냄)
+export function openInExternalBrowser(url) {
+  window.location.href = url || RELEASES_PAGE;
+}
+
+// APK 를 앱 안에서 내려받아 바로 설치 화면 열기
+// onProgress(0~1) 로 진행률 전달. 실패하면 예외를 던짐 (호출 쪽에서 외부 브라우저로 대체)
+export async function downloadAndInstall(url, onProgress) {
+  if (!Capacitor.isNativePlatform()) { openInExternalBrowser(url); return; }
+  const { Filesystem, Directory } = await import('@capacitor/filesystem');
+  const { FileOpener } = await import('@capawesome-team/capacitor-file-opener');
+  let listener = null;
+  try {
+    listener = await Filesystem.addListener('progress', (e) => {
+      if (onProgress && e.contentLength > 0) onProgress(Math.min(1, e.bytes / e.contentLength));
+    });
+    const res = await Filesystem.downloadFile({
+      url, path: 'foodtruck-update.apk', directory: Directory.Cache, progress: true,
+    });
+    if (onProgress) onProgress(1);
+    const path = String(res.path || '').replace(/^file:\/\//, '');
+    if (!path) throw new Error('다운로드 경로를 찾지 못했어요');
+    await FileOpener.openFile({ path, mimeType: 'application/vnd.android.package-archive' });
+  } finally {
+    if (listener) listener.remove();
+  }
+}
+
+// 하위 호환
 export async function openUpdateDownload(url) {
-  try { await Browser.open({ url: url || RELEASES_PAGE }); }
-  catch { window.open(url || RELEASES_PAGE, '_blank'); }
+  try { await downloadAndInstall(url); } catch { openInExternalBrowser(url); }
 }

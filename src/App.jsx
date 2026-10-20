@@ -12,7 +12,7 @@ import {
 
 import { fetchNotices, isOnline, storage, API_BASE, registerUserSiteOnServer, removeUserSiteFromServer, deleteNoticeFromServer, addRegionOnServer, removeRegionOnServer, rediscoverRegionOnServer, syncWithServer, exportBackup, importBackup } from './api';
 import { markNoticesSeenInBackground } from './background';
-import { checkForUpdate, openUpdateDownload, getCurrentVersion } from './updater';
+import { checkForUpdate, downloadAndInstall, openInExternalBrowser, getCurrentVersion } from './updater';
 import { notifyNewNotices, scheduleDeadlineReminders, listenNotificationClick, ensurePermission } from './notifications';
 import { searchRegions } from './regionsDB';
 
@@ -1528,6 +1528,21 @@ function SitesView({ sites, onOpenUrl, onRemoveSite, onOpenSiteManager }) {
 // ============ 🆕 업데이트 안내 ============
 function UpdateDialog({ info, onClose }) {
   const { current, latest } = info;
+  const [state, setState] = useState('idle'); // idle | downloading | opened | failed
+  const [progress, setProgress] = useState(0);
+  const [errMsg, setErrMsg] = useState('');
+
+  const start = async () => {
+    setState('downloading'); setProgress(0); setErrMsg('');
+    try {
+      await downloadAndInstall(latest.apkUrl, setProgress);
+      setState('opened');
+    } catch (err) {
+      setErrMsg(err && err.message ? err.message : String(err));
+      setState('failed');
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center sm:items-center p-0 sm:p-4">
       <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4">
@@ -1535,17 +1550,39 @@ function UpdateDialog({ info, onClose }) {
           <h2 className="text-base font-black text-stone-900">🎉 새 버전이 있어요</h2>
           <p className="text-xs text-stone-500 mt-1">현재 v{current.version} → 최신 v{latest.version}</p>
         </div>
-        {latest.notes && (
+        {latest.notes && state === 'idle' && (
           <div className="bg-stone-50 rounded-xl p-3 text-[12px] text-stone-700 whitespace-pre-wrap max-h-48 overflow-y-auto">{latest.notes}</div>
         )}
-        <p className="text-[11px] text-stone-500">
-          다운로드가 끝나면 알림창이나 다운로드 폴더에서 파일을 눌러 설치하세요. 데이터는 그대로 유지돼요.
-          처음 한 번은 "출처를 알 수 없는 앱 허용"을 물어볼 수 있어요.
-        </p>
+        {state === 'downloading' && (
+          <div>
+            <div className="text-xs font-bold text-stone-700 mb-1.5">다운로드 중... {Math.round(progress * 100)}%</div>
+            <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-orange-500 to-red-500 transition-all" style={{ width: Math.round(progress * 100) + '%' }} />
+            </div>
+          </div>
+        )}
+        {state === 'opened' && (
+          <p className="text-xs text-stone-700 bg-green-50 rounded-xl p-3">
+            설치 화면이 열렸어요. <b>업데이트</b>를 누르면 끝나요. 처음 한 번은 "이 출처의 앱 허용"을 켜라고 나올 수 있어요 → 켜고 뒤로 오면 설치가 이어져요.
+          </p>
+        )}
+        {state === 'failed' && (
+          <p className="text-xs text-red-600 bg-red-50 rounded-xl p-3">
+            앱 안에서 설치를 못 했어요 ({errMsg}). 아래 "브라우저로 받기"를 눌러 크롬에서 받은 뒤 파일을 눌러 설치하세요.
+          </p>
+        )}
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-stone-100 text-stone-600 font-bold text-sm">나중에</button>
-          <button onClick={() => { openUpdateDownload(latest.apkUrl); onClose(); }}
-            className="flex-1 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 text-white font-black text-sm active:scale-95">업데이트</button>
+          <button onClick={onClose} disabled={state === 'downloading'}
+            className="flex-1 py-3 rounded-xl bg-stone-100 text-stone-600 font-bold text-sm disabled:opacity-50">{state === 'opened' ? '닫기' : '나중에'}</button>
+          {state === 'failed' ? (
+            <button onClick={() => openInExternalBrowser(latest.apkUrl)}
+              className="flex-1 py-3 rounded-xl bg-stone-800 text-white font-black text-sm active:scale-95">브라우저로 받기</button>
+          ) : (
+            <button onClick={start} disabled={state === 'downloading'}
+              className="flex-1 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 text-white font-black text-sm active:scale-95 disabled:opacity-60">
+              {state === 'downloading' ? '받는 중...' : state === 'opened' ? '다시 설치' : '업데이트'}
+            </button>
+          )}
         </div>
       </div>
     </div>
