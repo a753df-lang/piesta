@@ -22,6 +22,14 @@
     "StatusBar": {
       "style": "LIGHT",
       "backgroundColor": "#EF4444"
+    },
+    "BackgroundRunner": {
+      "label": "com.foodtruck.alarm.check",
+      "src": "runners/background.js",
+      "event": "checkNotices",
+      "repeat": true,
+      "interval": 30,
+      "autoStart": true
     }
   }
 }

@@ -10,9 +10,10 @@ import {
   CheckSquare, Square, TrendingUp, Navigation, Map,
 } from 'lucide-react';
 
-import { fetchNotices, isOnline, storage, API_BASE, registerUserSiteOnServer, removeUserSiteFromServer, deleteNoticeFromServer } from './api';
+import { fetchNotices, isOnline, storage, API_BASE, registerUserSiteOnServer, removeUserSiteFromServer, deleteNoticeFromServer, addRegionOnServer, removeRegionOnServer, rediscoverRegionOnServer, syncWithServer } from './api';
+import { markNoticesSeenInBackground } from './background';
 import { notifyNewNotices, scheduleDeadlineReminders, listenNotificationClick, ensurePermission } from './notifications';
-import { searchRegions, generateSitesFromRegion } from './regionsDB';
+import { searchRegions } from './regionsDB';
 
 const DEFAULT_SITES = [
   // 충남권
@@ -141,6 +142,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [customRegions, setCustomRegions] = useState([]);
   const [customSites, setCustomSites] = useState([]);
+  const [regionStatus, setRegionStatus] = useState({}); // 🆕 서버 자동 연결 상태 { 지역명: {status, message, sources} }
   const [showRegionManager, setShowRegionManager] = useState(false);
   const [showSiteManager, setShowSiteManager] = useState(false);
 
@@ -205,23 +207,49 @@ export default function App() {
       const net = await isOnline();
       setOnline(net);
       if (!net) { setError('오프라인 상태입니다'); return; }
+      // 앱 복귀 리스너가 처음 만든 refresh 를 계속 쓰므로, 최신 값은 저장소에서 직접 읽음
+      const curSettings = await storage.getSettings();
+      const curRegions = await storage.getCustomRegions();
+      const curSites = await storage.getCustomSites();
+
+      // 🆕 서버 DB가 초기화돼도 내 지역·사이트가 자동 복구되도록 매번 동기화
+      // 예전 버전이 지역 추가 때 넣던 "홈페이지 주소만 있는 사이트"는 게시판이 아니라서 제외 (지역 자동 연결이 대신함)
+      const isBareHome = (u) => { try { const p = new URL(u).pathname; return p === '/' || p === ''; } catch { return false; } };
+      const sync = await syncWithServer({ regions: [...DEFAULT_REGIONS, ...curRegions], sites: curSites.filter(s => !isBareHome(s.url)) });
+      if (sync.ok) {
+        const map = {};
+        for (const r of sync.regions) map[r.name] = r;
+        setRegionStatus(map);
+        const idByKey = new Map(sync.sites.map(s => [s.url + '|' + s.name, s.serverId]));
+        const updatedSites = curSites.map(s => ({ ...s, serverId: idByKey.get(s.url + '|' + s.name) || s.serverId }));
+        if (updatedSites.some((s, i) => s.serverId !== curSites[i].serverId)) {
+          setCustomSites(updatedSites);
+          await storage.setCustomSites(updatedSites);
+        }
+      }
+
       const fresh = await fetchNotices({ limit: 200 });
       const cached = await storage.getCachedNotices();
       const cachedIds = new Set(cached.map(n => n.id));
       const seenIds = await storage.getSeenIds();
       const trulyNew = fresh.filter(n => !cachedIds.has(n.id) && !seenIds.has(n.id));
-      if (trulyNew.length > 0 && settings.notifyEnabled && cached.length > 0) {
+      if (trulyNew.length > 0 && curSettings.notifyEnabled && cached.length > 0) {
         await notifyNewNotices(trulyNew);
         await storage.addSeenIds(trulyNew.map(n => n.id));
       } else if (trulyNew.length > 0) {
         await storage.addSeenIds(trulyNew.map(n => n.id));
       }
-      setServerNotices(fresh);
-      await storage.setCachedNotices(fresh);
+      // 서버 응답이 비어 있으면(서버 재시작 직후 등) 기존 목록을 지우지 않음
+      const merged = fresh.length > 0 ? fresh : cached;
+      setServerNotices(merged);
+      await storage.setCachedNotices(merged);
+      // 백그라운드 알림이 같은 공고를 또 알리지 않도록 기준 시각 전달
+      const newest = fresh.reduce((m, n) => Math.max(m, n.createdAt || 0), 0);
+      if (newest) markNoticesSeenInBackground(newest);
       setLastSync(new Date());
-      if (settings.notifyEnabled) {
-        const all = [...fresh, ...manualNotices];
-        await scheduleDeadlineReminders(all, settings.notifyDays);
+      if (curSettings.notifyEnabled) {
+        const all = [...merged, ...manualNotices];
+        await scheduleDeadlineReminders(all, curSettings.notifyDays);
       }
     } catch (err) {
       setError(err.message);
@@ -516,31 +544,30 @@ export default function App() {
     const nextRegions = [...customRegions, regionName];
     setCustomRegions(nextRegions);
     await storage.setCustomRegions(nextRegions);
+    setRegionStatus(prev => ({ ...prev, [regionName]: { status: 'pending', message: '고시공고·공지사항 자동 연결 중...' } }));
 
-    const generatedSites = generateSitesFromRegion(regionData).map(s => ({
-      ...s, id: 'cs_' + Date.now() + Math.random().toString(36).slice(2, 6),
-    }));
-
-    // 🆕 각 생성된 사이트를 서버에도 등록
-    let serverSuccessCount = 0;
-    for (const site of generatedSites) {
-      const result = await registerUserSiteOnServer({
-        region: site.region,
-        name: site.name,
-        url: site.url,
-        type: site.type || '관공서',
-      });
-      if (result.ok) {
-        site.serverId = result.serverId;
-        serverSuccessCount++;
-      }
+    // 🆕 지역 이름만 서버에 보내면 서버가 고시공고·공지사항을 자동으로 찾아 연결
+    const result = await addRegionOnServer(regionName);
+    if (result.ok) {
+      setRegionStatus(prev => ({ ...prev, [regionName]: result.region }));
+      const r = result.region;
+      const icon = r.status === 'ok' ? '✅' : r.status === 'partial' ? '⚠️' : '❌';
+      const list = (r.sources || []).map(s => '· ' + s.name).join('\n');
+      alert(`${icon} ${regionName} 추가됨\n${r.message || ''}${list ? '\n\n' + list : ''}`
+        + (r.status === 'failed' || r.status === 'unknown' ? '\n\n사이트 관리에서 게시판 주소를 직접 추가할 수 있어요.' : ''));
+    } else {
+      setRegionStatus(prev => ({ ...prev, [regionName]: { status: 'pending', message: '서버 연결 대기 (다음 새로고침 때 자동 재시도)' } }));
+      alert(`✅ ${regionName} 추가됨\n서버 연결이 안 돼서 다음 새로고침 때 자동으로 연결합니다.\n(${result.error})`);
     }
+  };
 
-    const nextSites = [...customSites, ...generatedSites];
-    setCustomSites(nextSites);
-    await storage.setCustomSites(nextSites);
-
-    alert(`✅ ${regionName} 추가됨\n시청 사이트 ${generatedSites.length}개 등록 (서버 ${serverSuccessCount}개 자동 크롤링)`);
+  const retryRegion = async (name) => {
+    setRegionStatus(prev => ({ ...prev, [name]: { ...(prev[name] || {}), status: 'pending', message: '다시 연결 중...' } }));
+    const result = await rediscoverRegionOnServer(name);
+    if (result.ok) setRegionStatus(prev => ({ ...prev, [name]: result.region }));
+    else {
+      setRegionStatus(prev => ({ ...prev, [name]: { ...(prev[name] || {}), status: 'failed', message: result.error } }));
+    }
   };
 
   const addCustomRegionManual = async (name) => {
@@ -552,12 +579,19 @@ export default function App() {
     const next = [...customRegions, trimmed];
     setCustomRegions(next);
     await storage.setCustomRegions(next);
+    // 목록에 없는 이름이어도 서버가 찾을 수 있으면 자동 연결
+    addRegionOnServer(trimmed).then(r => {
+      if (r.ok) setRegionStatus(prev => ({ ...prev, [trimmed]: r.region }));
+    });
   };
 
   const removeCustomRegion = async (name) => {
     if (!confirm('"' + name + '" 지역을 삭제할까요?\n해당 지역의 사이트도 함께 삭제됩니다.')) return;
     const nextRegions = customRegions.filter(r => r !== name);
     const nextSites = customSites.filter(s => s.region !== name);
+    // 서버에서도 지역·사이트 삭제 (실패해도 앱에서는 삭제)
+    removeRegionOnServer(name);
+    customSites.filter(s => s.region === name && s.serverId).forEach(s => removeUserSiteFromServer(s.serverId));
     setCustomRegions(nextRegions);
     setCustomSites(nextSites);
     await storage.setCustomRegions(nextRegions);
@@ -593,7 +627,7 @@ export default function App() {
     await storage.setCustomSites(next);
 
     if (serverResult.ok) {
-      alert('✅ 사이트 등록 완료!\n서버에서 자동 크롤링 시작합니다.\n(잠시 후 공고가 나타날 수 있어요)');
+      alert((serverResult.rows > 0 ? '✅ 사이트 등록 완료!\n' : '⚠️ 사이트는 등록했지만 확인이 필요해요\n') + (serverResult.message || '서버에서 자동 크롤링 시작합니다.'));
     } else {
       alert('⚠️ 앱에 저장됐지만 서버 등록은 실패했어요.\n사이트는 사용 가능하지만 자동 알림은 안 옵니다.');
     }
@@ -867,7 +901,7 @@ export default function App() {
 
         {showAdd && <NoticeForm initial={editingNotice} onSave={saveManualNotice} onClose={() => { setShowAdd(false); setEditingNotice(null); }} regions={formRegions} />}
         {showEventForm && <EventForm initial={editingEvent} onSave={saveEvent} onClose={() => { setShowEventForm(false); setEditingEvent(null); }} regions={formRegions} onOpenMap={openNaverMap} />}
-        {showRegionManager && <RegionManager customRegions={customRegions} defaultRegions={DEFAULT_REGIONS} onAddFromDB={addRegionFromDB} onAddManual={addCustomRegionManual} onRemove={removeCustomRegion} onClose={() => setShowRegionManager(false)} />}
+        {showRegionManager && <RegionManager customRegions={customRegions} defaultRegions={DEFAULT_REGIONS} regionStatus={regionStatus} onRetry={retryRegion} onAddFromDB={addRegionFromDB} onAddManual={addCustomRegionManual} onRemove={removeCustomRegion} onClose={() => setShowRegionManager(false)} />}
         {showSiteManager && <SiteManager customSites={customSites} regions={formRegions} onAdd={addCustomSite} onRemove={removeCustomSite} onClose={() => setShowSiteManager(false)} />}
       </div>
     </div>
@@ -1798,7 +1832,27 @@ function MoneyInput({ value, onChange, placeholder }) {
 }
 
 // ============ 지역 관리 ============
-function RegionManager({ customRegions, defaultRegions, onAddFromDB, onAddManual, onRemove, onClose }) {
+// 🆕 지역별 서버 자동 연결 상태 뱃지
+function RegionStatusLine({ info, onRetry }) {
+  if (!info) return <div className="text-[10px] text-stone-400 mt-0.5">서버 연결 확인 전</div>;
+  const color = info.status === 'ok' ? 'text-green-600' : info.status === 'partial' ? 'text-amber-600'
+    : info.status === 'pending' ? 'text-stone-500' : 'text-red-500';
+  const icon = info.status === 'ok' ? '✅' : info.status === 'partial' ? '⚠️' : info.status === 'pending' ? '⏳' : '❌';
+  const problem = (info.sources || []).filter(s => s.status === 'empty' || s.status === 'error');
+  return (
+    <div className="mt-0.5">
+      <div className={'text-[10px] font-bold ' + color}>{icon} {info.message || info.status}</div>
+      {problem.length > 0 && (
+        <div className="text-[10px] text-red-500">최근 읽기 실패: {problem.map(s => s.name).join(', ')}</div>
+      )}
+      {onRetry && info.status !== 'pending' && info.status !== 'ok' && info.status !== 'unknown' && (
+        <button onClick={onRetry} className="text-[10px] font-bold text-purple-600 underline mt-0.5">다시 연결</button>
+      )}
+    </div>
+  );
+}
+
+function RegionManager({ customRegions, defaultRegions, regionStatus = {}, onRetry, onAddFromDB, onAddManual, onRemove, onClose }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [manualName, setManualName] = useState('');
 
@@ -1882,7 +1936,10 @@ function RegionManager({ customRegions, defaultRegions, onAddFromDB, onAddManual
               <div className="space-y-2">
                 {customRegions.map(r => (
                   <div key={r} className="flex items-center justify-between p-3 bg-purple-50 border border-purple-200 rounded-xl">
-                    <span className="text-sm font-bold text-purple-900">{r}</span>
+                    <div className="min-w-0">
+                      <span className="text-sm font-bold text-purple-900">{r}</span>
+                      <RegionStatusLine info={regionStatus[r]} onRetry={onRetry ? () => onRetry(r) : null} />
+                    </div>
                     <button onClick={() => onRemove(r)} className="text-red-500 p-1 active:scale-95">
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -1894,9 +1951,14 @@ function RegionManager({ customRegions, defaultRegions, onAddFromDB, onAddManual
           <div>
             <h3 className="text-xs font-black text-stone-700 mb-2">기본 지역 ({defaultRegions.length})</h3>
             <div className="flex flex-wrap gap-1.5">
-              {defaultRegions.map(r => (
-                <span key={r} className="text-[11px] font-bold text-stone-600 bg-stone-100 px-2.5 py-1 rounded-md">{r}</span>
-              ))}
+              {defaultRegions.map(r => {
+                const st = regionStatus[r] && regionStatus[r].status;
+                const dot = st === 'ok' ? '🟢' : st === 'partial' ? '🟡' : st === 'failed' || st === 'unknown' ? '🔴' : '⚪';
+                return (
+                  <span key={r} title={(regionStatus[r] && regionStatus[r].message) || ''}
+                    className="text-[11px] font-bold text-stone-600 bg-stone-100 px-2.5 py-1 rounded-md">{dot} {r}</span>
+                );
+              })}
             </div>
           </div>
         </div>

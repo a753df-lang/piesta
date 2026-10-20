@@ -46,6 +46,15 @@ jobs:
           fi
           npx cap sync android
 
+      - name: Patch build.gradle (백그라운드 알림 플러그인)
+        run: |
+          GRADLE="android/app/build.gradle"
+          if ! grep -q "background-runner/android/src/main/libs" "$GRADLE"; then
+            sed -i "/capacitor-cordova-android-plugins\/src\/main\/libs/a\\        dirs '../../node_modules/@capacitor/background-runner/android/src/main/libs', 'libs'" "$GRADLE"
+          fi
+          grep -n -A3 "flatDir" "$GRADLE"
+          grep -q "background-runner/android/src/main/libs" "$GRADLE" || (echo "❌ build.gradle 패치 실패" && exit 1)
+
       - name: Patch AndroidManifest.xml
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"

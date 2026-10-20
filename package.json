@@ -22,6 +22,7 @@
     "@capacitor/core": "^6.1.2",
     "@capacitor/android": "^6.1.2",
     "@capacitor/app": "^6.0.1",
+    "@capacitor/background-runner": "~2.1.0",
     "@capacitor/local-notifications": "^6.1.0",
     "@capacitor/preferences": "^6.0.2",
     "@capacitor/network": "^6.0.2",

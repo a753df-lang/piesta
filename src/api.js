@@ -47,6 +47,85 @@ export async function isOnline() {
   }
 }
 
+// ========== 🆕 지역 서버 API (지역 이름만 보내면 서버가 사이트 자동 연결) ==========
+
+async function fetchJson(url, options = {}, timeoutMs = 90000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: ctrl.signal });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.ok === false) throw new Error(data.error || `서버 오류: ${res.status}`);
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// 반환: { ok, region: {name, status, message, sources:[...]}, error }
+export async function addRegionOnServer(name) {
+  try {
+    const data = await fetchJson(`${API_BASE}/api/regions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    return { ok: true, region: data.region };
+  } catch (err) {
+    console.warn('지역 서버 등록 실패:', err.message);
+    return { ok: false, error: err.name === 'AbortError' ? '서버 응답 시간 초과 (잠시 후 자동 재시도됩니다)' : err.message };
+  }
+}
+
+export async function removeRegionOnServer(name) {
+  try {
+    await fetchJson(`${API_BASE}/api/regions/${encodeURIComponent(name)}`, { method: 'DELETE' }, 20000);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+export async function rediscoverRegionOnServer(name) {
+  try {
+    const data = await fetchJson(`${API_BASE}/api/regions/${encodeURIComponent(name)}/rediscover`, { method: 'POST' });
+    return { ok: true, region: data.region };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// 지역별 자동 연결 상태 { [name]: {status, message, sources} }
+export async function fetchRegionStatus() {
+  try {
+    const data = await fetchJson(`${API_BASE}/api/regions`, {}, 30000);
+    const map = {};
+    for (const r of data.regions || []) map[r.name] = r;
+    return map;
+  } catch {
+    return null;
+  }
+}
+
+// 앱의 지역/사이트 목록을 서버에 올림 (서버 DB가 초기화돼도 자동 복구)
+// 반환: { ok, sites: [{url, name, serverId}] }
+export async function syncWithServer({ regions, sites }) {
+  try {
+    const data = await fetchJson(`${API_BASE}/api/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        regions,
+        sites: (sites || []).map(s => ({ region: s.region, name: s.name, url: s.url, type: s.type })),
+      }),
+    }, 30000);
+    return { ok: true, sites: data.sites || [], regions: data.regions || [] };
+  } catch (err) {
+    console.warn('서버 동기화 실패:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
 // ========== 사용자 사이트 서버 API ==========
 
 export async function registerUserSiteOnServer({ region, name, url, type }) {
@@ -59,7 +138,7 @@ export async function registerUserSiteOnServer({ region, name, url, type }) {
     if (!res.ok) throw new Error(`서버 등록 실패: ${res.status}`);
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || '서버 등록 실패');
-    return { ok: true, serverId: data.id };
+    return { ok: true, serverId: data.id, rows: data.rows || 0, message: data.message || '' };
   } catch (err) {
     console.warn('서버 사이트 등록 실패:', err.message);
     return { ok: false, error: err.message };
